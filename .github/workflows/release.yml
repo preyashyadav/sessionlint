@@ -1,0 +1,63 @@
+# Publishes sessionlint to npm with build provenance (Sigstore) when a `v*` tag is pushed.
+#
+# Provenance can ONLY be produced in CI with `id-token: write` — a local `npm publish`
+# cannot generate it. Auth uses npm Trusted Publishing (OIDC), so there is no long-lived
+# NPM_TOKEN secret. You MUST configure a trusted publisher for this repo + this workflow
+# filename on npmjs.com (Package → Settings → Trusted Publishers) BEFORE pushing the first
+# tag, or the publish step fails with an auth error.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for BOTH provenance attestation and trusted-publisher OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      # TODO(hardening): pin the two actions below to commit SHAs (needs network to resolve).
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Test (gate — never publish a failing build)
+        run: bun test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing (OIDC) requires a recent npm CLI (>= 11.5).
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Verify the tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match package.json version $PKG — bump package.json first."
+            exit 1
+          fi
+
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
+        # Trusted Publishing supplies auth via OIDC — no NODE_AUTH_TOKEN needed.
+        # If you use a classic NPM_TOKEN secret instead, uncomment:
+        #   env:
+        #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
