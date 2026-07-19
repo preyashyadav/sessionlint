@@ -76,7 +76,8 @@ tells you what happened; it never overrules you.
 
 | Command | What it does |
 |---|---|
-| `sessionlint` | Lint your history; findings with $ ranges. `--json` / `--md` for CI, `--dir <path>` to point elsewhere |
+| `sessionlint` | Lint your history; findings with $ ranges. `--json` / `--md`, `--dir <path>` to point elsewhere |
+| `sessionlint --ci` | CI gate: versioned JSON to stdout, non-zero exit when a finding meets `--fail-on <error\|warning\|info>` (default `error`) |
 | `sessionlint sessions` | List sessions: id, date, turns, API-equivalent cost estimate |
 | `sessionlint explain [<rule>]` | What a rule detects, why it costs, how to fix it |
 | `sessionlint doctor` | Environment check: where sessions are read from, how many found, pricing freshness |

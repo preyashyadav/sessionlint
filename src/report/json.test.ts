@@ -28,3 +28,14 @@ describe("renderJson", () => {
     expect(cost.couldHaveBeen.low).toBeLessThan(cost.couldHaveBeen.high);
   });
 });
+
+describe("renderJson: versioned output", () => {
+  test("carries a top-level schemaVersion", async () => {
+    const { JSON_SCHEMA_VERSION } = await import("./json");
+    const parsed = JSON.parse(renderJson({ sessionsAnalyzed: 0, totalFindings: 0, flaggedSessions: [] }));
+    expect(parsed.schemaVersion).toBe(JSON_SCHEMA_VERSION);
+    expect(parsed.schemaVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    // report fields remain top-level (additive, non-breaking for existing consumers)
+    expect(parsed.sessionsAnalyzed).toBe(0);
+  });
+});

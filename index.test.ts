@@ -435,3 +435,35 @@ describe("utility commands (help, version, explain, doctor, sessions)", () => {
     expect(stderr).toContain('Unknown command "bogus-command"');
   });
 });
+
+describe("--ci gate", () => {
+  test("no findings meeting the threshold: JSON to stdout, exit 0", async () => {
+    await seedProject("minimal-session.jsonl"); // one turn, one model — zero findings
+    const { stdout, exitCode } = await runCli(["--ci"]);
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.schemaVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(parsed.totalFindings).toBe(0);
+  });
+
+  test("a finding at/above --fail-on exits 1 (still prints JSON)", async () => {
+    await seedProject("missing-clear.jsonl"); // produces at least one finding
+    const { stdout, exitCode } = await runCli(["--ci", "--fail-on", "info"]);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout).totalFindings).toBeGreaterThan(0);
+  });
+
+  test("findings below --fail-on do not fail the build", async () => {
+    // missing-clear is a warning-tier finding; failing only on error must exit 0.
+    await seedProject("missing-clear.jsonl");
+    const { exitCode } = await runCli(["--ci", "--fail-on", "error"]);
+    expect(exitCode).toBe(0);
+  });
+
+  test("invalid --fail-on value exits 2 with a usage error", async () => {
+    await seedProject("minimal-session.jsonl");
+    const { stderr, exitCode } = await runCli(["--ci", "--fail-on", "nonsense"]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("--fail-on must be one of");
+  });
+});

@@ -30,4 +30,8 @@ export interface Rule {
   detector: (session: Session) => Finding[];
   fixDocUrl: string;
   suppressible: true;
+  /** Former IDs this rule has been renamed from. `--suppress <old-id>` keeps working after a
+   * rename so a user's suppress list never silently breaks. Findings always carry the current
+   * `id`; aliases only ever appear on the input side (suppression). */
+  aliases?: string[];
 }

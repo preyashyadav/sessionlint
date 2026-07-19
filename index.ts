@@ -526,6 +526,8 @@ AUDIT (read-only, the default)
   sessionlint                       lint your local Claude Code history; prints findings
                                     with $ cost ranges  [--dir <path>] [--json | --md]
                                     [--suppress <id,id,...>]
+  sessionlint --ci                  CI gate: JSON to stdout, non-zero exit when a finding
+                                    meets --fail-on <error|warning|info> (default error)
   sessionlint sessions              list discovered sessions: id, date, turns, est. cost
   sessionlint explain [<rule>]      what a rule detects, why it costs you, how to fix it
   sessionlint doctor                environment check: where sessions are read from, how
@@ -774,6 +776,11 @@ async function main(): Promise<void> {
 
   const report = buildReport(loaded, { suppressedRuleIds });
 
+  if (args.includes("--ci")) {
+    runCiGate(report, args);
+    return;
+  }
+
   if (args.includes("--json")) {
     console.log(renderJson(report));
   } else if (args.includes("--md")) {
@@ -781,6 +788,26 @@ async function main(): Promise<void> {
   } else {
     console.log(renderTerminal(report));
   }
+}
+
+/** `--ci`: machine-readable output (JSON by default, --md respected) plus a non-zero exit when a
+ * finding meets the `--fail-on` severity threshold (default "error"). No TTY assumptions. */
+function runCiGate(report: import("./src/report/types").Report, args: string[]): void {
+  const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, error: 2 };
+  const failIdx = args.indexOf("--fail-on");
+  const failOn = failIdx !== -1 && args[failIdx + 1] ? args[failIdx + 1]! : "error";
+  if (!(failOn in SEVERITY_RANK)) {
+    console.error(`--fail-on must be one of: info, warning, error (got "${failOn}")`);
+    process.exit(2);
+  }
+  const threshold = SEVERITY_RANK[failOn]!;
+
+  console.log(args.includes("--md") ? renderMarkdown(report) : renderJson(report));
+
+  const worst = report.flaggedSessions
+    .flatMap((s) => s.findings)
+    .reduce((max, f) => Math.max(max, SEVERITY_RANK[f.severity] ?? 0), -1);
+  if (worst >= threshold) process.exitCode = 1;
 }
 
 if (import.meta.main) {

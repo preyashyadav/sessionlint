@@ -11,7 +11,7 @@ export {
   missingClearAtTopicBoundaryRule,
   MISSING_CLEAR_RULE_ID,
 } from "./missing-clear-at-topic-boundary";
-export { applySuppression } from "./suppress";
+export { applySuppression, buildAliasIndex } from "./suppress";
 export type { Rule, Finding, CostImpactRange } from "./types";
 
 import { cacheNukeRule } from "./cache-nuke";

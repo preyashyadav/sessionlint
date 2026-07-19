@@ -17,7 +17,10 @@ dist/
 /fixtures/*.jsonl
 /fixtures/raw/
 
-# All internal docs are local-only EXCEPT docs/rules/, which the CLI links to
-# (findings print a docs/rules/<id>.md URL — removing it would 404 those links).
+# Internal docs are local-only. The exceptions are the user-facing reference docs
+# published with the product: docs/rules/ (the CLI's findings link to these pages),
+# plus a small set of top-level reference docs listed explicitly below.
 /docs/*
 !/docs/rules/
+!/docs/SUPPORTED_SCHEMAS.md
+!/docs/json-schema.md

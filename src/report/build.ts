@@ -2,7 +2,7 @@ import type { LoadedSession } from "../adapters/claude-code/session";
 import type { Session } from "../adapters/claude-code/types";
 import { computeSessionCost } from "../cost/compute";
 import { ALL_RULES } from "../rules";
-import { applySuppression } from "../rules/suppress";
+import { applySuppression, buildAliasIndex } from "../rules/suppress";
 import type { Finding } from "../rules/types";
 import type { DisplayFinding, Report, SessionReportEntry } from "./types";
 import { sanitizeDisplayText } from "./sanitize";
@@ -28,6 +28,7 @@ function extractTitle(session: Session): string | null {
 export function buildReport(loaded: LoadedSession[], options: BuildReportOptions = {}): Report {
   const asOf = options.asOf ?? new Date();
   const suppressed = options.suppressedRuleIds ?? [];
+  const aliasIndex = buildAliasIndex(ALL_RULES);
   const flaggedSessions: SessionReportEntry[] = [];
   let totalFindings = 0;
 
@@ -36,7 +37,7 @@ export function buildReport(loaded: LoadedSession[], options: BuildReportOptions
 
     let findings: Finding[] = [];
     for (const rule of ALL_RULES) findings.push(...rule.detector(session));
-    findings = applySuppression(findings, suppressed);
+    findings = applySuppression(findings, suppressed, aliasIndex);
     if (findings.length === 0) continue;
 
     const cost = computeSessionCost(session, asOf);
