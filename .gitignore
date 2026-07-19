@@ -1,0 +1,22 @@
+.vscode/
+node_modules/
+dist/
+.env
+fixtures/raw/
+/~/
+*.tgz
+.sessionlint/
+
+# --- Local-only: internal planning, dev, and test material (not published) ---
+# The public repo carries only what someone needs to USE sessionlint.
+# These stay on your machine and in the pre-clean-backup tag; never on GitHub.
+/MASTER.md
+/CLAUDE.md
+/scripts/
+/fixtures/
+*.test.ts
+
+# All internal docs are local-only EXCEPT docs/rules/, which the CLI links to
+# (findings print a docs/rules/<id>.md URL — removing it would 404 those links).
+/docs/*
+!/docs/rules/

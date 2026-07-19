@@ -1,0 +1,48 @@
+{
+  "name": "sessionlint",
+  "version": "0.1.0",
+  "description": "A local-first linter, gauge, and guard that identifies Claude Code patterns that often drive API-equivalent cost.",
+  "module": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai-coding",
+    "linter",
+    "token-usage",
+    "cost",
+    "ccusage",
+    "agent",
+    "ralph-loop"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/preyashyadav/sessionlint.git"
+  },
+  "homepage": "https://github.com/preyashyadav/sessionlint#readme",
+  "bugs": "https://github.com/preyashyadav/sessionlint/issues",
+  "files": [
+    "index.ts",
+    "src",
+    "!src/**/*.test.ts",
+    "docs/rules",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "sessionlint": "index.ts"
+  },
+  "scripts": {
+    "sessionlint": "bun run index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

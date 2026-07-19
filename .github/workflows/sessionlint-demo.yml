@@ -1,0 +1,27 @@
+# Example usage of ./action.yml — deliberately workflow_dispatch (manual) only, not triggered
+# on push/PR, so pushing this file can never start spending real API money on its own; a human
+# has to explicitly click "Run workflow." Requires an ANTHROPIC_API_KEY repo/org secret.
+name: sessionlint demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Task prompt for the demo run"
+        required: true
+        default: "Add a comment to the top of index.ts explaining what this file does."
+
+jobs:
+  sessionlint-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Run sessionlint (budgeted, laddered)
+        uses: ./
+        with:
+          prompt: ${{ inputs.prompt }}
+          model-ladder: "haiku,sonnet"
+          success-check: "true"
+          budget: "0.50"
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

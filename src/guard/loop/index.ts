@@ -1,0 +1,10 @@
+export { runLoop } from "./loop-runner";
+export { renderLoopResult } from "./render";
+export { realCostSource, realCommitSource } from "./real-sources";
+export { encodeProjectPath, costSince } from "./project-cost";
+export { getHeadCommit } from "./git-iterations";
+export { realDiffSource, buildTestOutputSignature } from "../watchdog/real-diff-source";
+export { realTestCommandRunner } from "../watchdog/test-command-runner";
+export type { LoopOptions, LoopResult, LoopStopReason, CostSource, CommitSource, CostSourceResult } from "./types";
+export type { WatchdogConfig, DiffSource, IterationRecord, WatchdogTripReason } from "../watchdog/types";
+export type { TestCommandRunner, TestCommandResult } from "../watchdog/test-command-runner";
