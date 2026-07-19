@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import { loadSession } from "../adapters/claude-code/session";
+import { readdirSync } from "fs";
 import { detectCacheNukes } from "./cache-nuke";
 
 const SYNTHETIC_DIR = join(import.meta.dir, "..", "..", "fixtures", "synthetic");
 const REAL_FIXTURES_DIR = join(import.meta.dir, "..", "..", "fixtures");
+const hasRealFixtures = (() => { try { return readdirSync(REAL_FIXTURES_DIR).some((f) => f.endsWith(".jsonl")); } catch { return false; } })();
 const AS_OF = new Date("2026-07-10");
 
 describe("detectCacheNukes: true positive (synthetic/model-switch.jsonl)", () => {
@@ -88,7 +90,7 @@ describe("detectCacheNukes: true negative (no model switches)", () => {
     expect(detectCacheNukes(session, AS_OF)).toEqual([]);
   });
 
-  test("real fixtures (single valid model per file): zero findings each", async () => {
+  test.skipIf(!hasRealFixtures)("real fixtures (single valid model per file): zero findings each", async () => {
     const realFiles = [
       "2d946943-68ff-45a5-a9f9-e2d1f8d750fb.jsonl",
       "917c012e-2980-4a86-bf24-5cb62df8a942.jsonl", // contains the corrupted/error entry, still no clean switch

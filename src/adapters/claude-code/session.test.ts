@@ -1,10 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { readdir } from "fs/promises";
+import { readdirSync } from "fs";
 import { join } from "path";
 import { loadSession } from "./session";
 
 const REAL_FIXTURES_DIR = join(import.meta.dir, "..", "..", "..", "fixtures");
 const SYNTHETIC_DIR = join(REAL_FIXTURES_DIR, "synthetic");
+
+// Real sanitized fixtures are local-only; tests asserting on them skip in the public/CI
+// checkout where they're absent (synthetic-corpus tests always run). See turns.test.ts.
+const hasRealFixtures = (() => {
+  try {
+    return readdirSync(REAL_FIXTURES_DIR).some((f) => f.endsWith(".jsonl"));
+  } catch {
+    return false;
+  }
+})();
 
 async function allFixturePaths(): Promise<string[]> {
   const real = (await readdir(REAL_FIXTURES_DIR)).filter((f) => f.endsWith(".jsonl")).map((f) => join(REAL_FIXTURES_DIR, f));
@@ -28,7 +39,7 @@ describe("loadSession: integration over the full fixture corpus", () => {
     }
   });
 
-  test("real fixture corpus spans >=2 known CC versions (Phase 1 gate)", async () => {
+  test.skipIf(!hasRealFixtures)("real fixture corpus spans >=2 known CC versions (Phase 1 gate)", async () => {
     const real = (await readdir(REAL_FIXTURES_DIR)).filter((f) => f.endsWith(".jsonl"));
     const versions = new Set<string>();
     for (const f of real) {
@@ -48,7 +59,7 @@ describe("loadSession: integration over the full fixture corpus", () => {
     expect(elapsedMs).toBeLessThan(1000);
   });
 
-  test("no real fixture has a spurious model switch (none contain a clean multi-model session)", async () => {
+  test.skipIf(!hasRealFixtures)("no real fixture has a spurious model switch (none contain a clean multi-model session)", async () => {
     const real = (await readdir(REAL_FIXTURES_DIR)).filter((f) => f.endsWith(".jsonl"));
     for (const f of real) {
       const { session } = await loadSession(join(REAL_FIXTURES_DIR, f));

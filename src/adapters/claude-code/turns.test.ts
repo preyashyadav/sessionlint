@@ -1,11 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "fs/promises";
+import { readdirSync } from "fs";
 import { join } from "path";
 import { parseSessionFile } from "./parse";
 import { buildSession } from "./turns";
 
 const SYNTHETIC_DIR = join(import.meta.dir, "..", "..", "..", "fixtures", "synthetic");
 const REAL_FIXTURES_DIR = join(import.meta.dir, "..", "..", "..", "fixtures");
+
+// The sanitized real-transcript fixtures are local-only (never published — they derive from
+// real Claude Code history). Tests that assert against them run at full strength locally and
+// skip honestly in the public/CI checkout where those fixtures are absent. Synthetic-fixture
+// tests below always run.
+const hasRealFixtures = (() => {
+  try {
+    return readdirSync(REAL_FIXTURES_DIR).some((f) => f.endsWith(".jsonl"));
+  } catch {
+    return false;
+  }
+})();
 
 async function loadAndBuild(filePath: string) {
   const parsed = await parseSessionFile(filePath);
@@ -75,7 +88,7 @@ describe("buildSession: missing-prompt-id.jsonl", () => {
   });
 });
 
-describe("buildSession: real fixture with a corrupted assistant-error entry", () => {
+describe.skipIf(!hasRealFixtures)("buildSession: real fixture with a corrupted assistant-error entry", () => {
   test("917c012e fixture: error entry excluded from model-switch signal", async () => {
     const filePath = join(REAL_FIXTURES_DIR, "917c012e-2980-4a86-bf24-5cb62df8a942.jsonl");
     const { session, invalidModelCount } = await loadAndBuild(filePath);
@@ -96,7 +109,7 @@ describe("buildSession: real fixture with a corrupted assistant-error entry", ()
   });
 });
 
-describe("buildSession: all 7 real fixtures parse without throwing", () => {
+describe.skipIf(!hasRealFixtures)("buildSession: all 7 real fixtures parse without throwing", () => {
   const realFixtures = [
     "2d946943-68ff-45a5-a9f9-e2d1f8d750fb.jsonl",
     "3ead19a3-1577-434d-ba32-47c012fbb293.jsonl",
@@ -119,7 +132,7 @@ describe("buildSession: all 7 real fixtures parse without throwing", () => {
 
 // Sanity check on the fixture file itself, independent of the adapter, so a future
 // fixture-corpus change that breaks this assumption is caught immediately.
-test("sanity: real fixture files exist and are non-empty", async () => {
+test.skipIf(!hasRealFixtures)("sanity: real fixture files exist and are non-empty", async () => {
   const content = await readFile(join(REAL_FIXTURES_DIR, "2d946943-68ff-45a5-a9f9-e2d1f8d750fb.jsonl"), "utf-8");
   expect(content.length).toBeGreaterThan(0);
 });

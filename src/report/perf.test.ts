@@ -1,9 +1,11 @@
 /**
  * Perf smoke test for the Phase 1 gate ("30-day fixture corpus lints in <
- * 60s"). The full fixture corpus here (16 sessions, real + synthetic) is far
- * smaller than a real 30-day history, so this is an early regression
- * tripwire on the parse->rules->cost->render pipeline, not the formal gate
- * itself — the formal gate needs the human's real history (Task 6, dogfood).
+ * 60s"). The corpus here (12 synthetic sessions in the public repo, plus the
+ * 7 local-only real fixtures when present) is far smaller than a real 30-day
+ * history, so this is an early regression tripwire on the
+ * parse->rules->cost->render pipeline, not the formal gate itself — the formal
+ * gate needs the human's real history (Task 6, dogfood). Runs in CI over the
+ * synthetic corpus alone; real fixtures add to it locally.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -23,7 +25,10 @@ describe("full pipeline perf smoke test", () => {
     const real = (await readdir(REAL_FIXTURES_DIR)).filter((f) => f.endsWith(".jsonl")).map((f) => join(REAL_FIXTURES_DIR, f));
     const synthetic = (await readdir(SYNTHETIC_DIR)).filter((f) => f.endsWith(".jsonl")).map((f) => join(SYNTHETIC_DIR, f));
     const allPaths = [...real, ...synthetic];
-    expect(allPaths.length).toBeGreaterThanOrEqual(16);
+    // The public corpus is the synthetic set (12); real fixtures add to it locally. Assert a
+    // non-trivial corpus so the timing below is meaningful, without requiring the local-only reals.
+    expect(synthetic.length).toBeGreaterThanOrEqual(10);
+    expect(allPaths.length).toBeGreaterThanOrEqual(synthetic.length);
 
     const start = performance.now();
     const loaded = await Promise.all(allPaths.map((p) => loadSession(p)));
