@@ -534,8 +534,9 @@ AUDIT (read-only, the default)
   sessionlint doctor                environment check: where sessions are read from, how
                                     many were found, pricing-table freshness
   sessionlint export --redact       write redacted copies of your sessions to a directory
-                                    (prose/paths/secrets removed) so you can share history
-                                    [--dir <path>] [--out <dir>]
+                                    (prose/paths/secrets removed) + a MANIFEST.md receipt,
+                                    so you can share history  [--out <dir>] [--dry-run]
+                                    (--dry-run shows what would be shared, writes nothing)
   sessionlint --verify              replay-audit findings with real, billed API calls
                                     (asks for confirmation first)  [--sample-n <n>] [--yes]
 
@@ -624,8 +625,9 @@ async function runExportCommand(args: string[]): Promise<void> {
   const root = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : undefined;
   const outIndex = args.indexOf("--out");
   const outDir = outIndex !== -1 && args[outIndex + 1] ? args[outIndex + 1]! : "sessionlint-export";
+  const dryRun = args.includes("--dry-run");
 
-  const summary = await runExport({ root, outDir });
+  const summary = await runExport({ root, outDir, dryRun, version: VERSION });
   console.log(renderExportSummary(summary));
 }
 

@@ -16,6 +16,10 @@ independently of the package.
   `session-NNN.jsonl` (never a source-derived name), and a post-redaction self-check
   flags any residual secret/email pattern. `--redact` is mandatory — there is no raw
   export. Redaction is best-effort; the output must be reviewed before sharing.
+  Each export also writes a `MANIFEST.md` receipt (what's included, redacted-vs-preserved
+  fields, self-check result, a sample redacted line, and consent / how-to-share guidance).
+  `--dry-run` shows the summary and a sample redacted line without writing anything.
+  sessionlint never transmits anything — you share the folder yourself.
 
 ## [0.3.0] - 2026-07-19
 

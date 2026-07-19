@@ -483,7 +483,18 @@ describe("export --redact", () => {
     expect(stdout).toContain("redacted transcript");
     expect(stdout).toContain("REVIEW the output before sharing");
     const { readdir } = await import("fs/promises");
-    expect(await readdir(outDir)).toEqual(["session-001.jsonl"]);
+    expect((await readdir(outDir)).sort()).toEqual(["MANIFEST.md", "session-001.jsonl"]);
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  test("--dry-run shows what would be shared but writes nothing", async () => {
+    await seedProject("model-switch.jsonl");
+    const outDir = await mkdtemp(join(tmpdir(), "sessionlint-cli-dry-"));
+    const { stdout, exitCode } = await runCliRaw(["export", "--redact", "--dry-run", "--dir", fixtureRoot, "--out", outDir]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("DRY RUN");
+    const { readdir } = await import("fs/promises");
+    expect(await readdir(outDir)).toEqual([]);
     await rm(outDir, { recursive: true, force: true });
   });
 });

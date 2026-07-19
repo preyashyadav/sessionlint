@@ -48,7 +48,7 @@ describe("runExport --redact", () => {
     expect(summary.residualEmailLines).toBe(0);
 
     const outFiles = await readdir(outDir);
-    expect(outFiles).toEqual(["session-001.jsonl"]); // flattened, source-independent name
+    expect(outFiles.sort()).toEqual(["MANIFEST.md", "session-001.jsonl"]); // flattened name + receipt
 
     const content = await readFile(join(outDir, "session-001.jsonl"), "utf-8");
     // No fake secret, path, project name, filename, or email survives.
@@ -76,6 +76,35 @@ describe("runExport --redact", () => {
     for (const f of outFiles) {
       expect(f).not.toContain("janedoe");
       expect(f).not.toContain("aaaaaaaa");
+    }
+  });
+
+  test("--dry-run: writes nothing but returns the summary and a redacted sample", async () => {
+    await seed();
+    const summary = await runExport({ root, outDir, dryRun: true });
+    expect(summary.dryRun).toBe(true);
+    expect(summary.filesFound).toBe(1);
+    expect(summary.filesWritten).toBe(0);
+    expect(await readdir(outDir)).toEqual([]); // nothing written
+    // A redacted sample is available to show the user, and it carries no source PII.
+    expect(summary.sampleRedactedLine).toBeTruthy();
+    for (const leak of ["janedoe", "acme-secret-project", "jane@acme-corp.example", "billing.ts"]) {
+      expect(summary.sampleRedactedLine!).not.toContain(leak);
+    }
+  });
+
+  test("MANIFEST.md receipt is written with the redaction summary, consent, and no PII", async () => {
+    await seed();
+    const { version } = { version: "9.9.9-test" };
+    await runExport({ root, outDir, version });
+    const manifest = await readFile(join(outDir, "MANIFEST.md"), "utf-8");
+    expect(manifest).toContain("sessionlint 9.9.9-test");
+    expect(manifest).toContain("What was redacted vs preserved");
+    expect(manifest).toContain("Consent");
+    expect(manifest).toContain("best-effort");
+    // The receipt itself must not leak source PII (it embeds a sample redacted line).
+    for (const leak of ["janedoe", "acme-secret-project", "jane@acme-corp.example"]) {
+      expect(manifest).not.toContain(leak);
     }
   });
 });
