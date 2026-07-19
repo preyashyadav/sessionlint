@@ -7,6 +7,8 @@ independently of the package.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-19
+
 ### Added
 - `sessionlint export --redact`: writes redacted copies of your session transcripts
   to a directory so you can share history (e.g. donate to a validation corpus).

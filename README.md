@@ -117,10 +117,27 @@ Details per rule: `sessionlint explain <rule>` or [docs/rules/](./docs/rules/).
 
 ## Status
 
-Young but real: 495 passing tests, dogfooded on the author's own history. The
-first replay-verified equivalence audit was inconclusive (0/5 sampled turns matched
-on a cheaper model, far too small a sample for a general conclusion) and is
-published as-is because honest uncertainty is the point.
+Young but real: dogfooded on the author's own history, with a published test
+suite. The first replay-verified equivalence audit was inconclusive (0/5 sampled
+turns matched on a cheaper model, far too small a sample for a general conclusion)
+and is published as-is because honest uncertainty is the point.
+
+## Contributing your history to the validation study
+
+The rules are still heuristics until their precision is measured on real, diverse
+sessions. If you'd like to help, you can donate a **redacted** copy of your history:
+
+```bash
+sessionlint export --redact --dry-run   # preview: shows exactly what would be shared, writes nothing
+sessionlint export --redact             # writes redacted session-NNN.jsonl + a MANIFEST.md receipt
+```
+
+The export removes prose, file contents, paths, filenames, secrets, and free-text
+keys, and keeps only what the rules need (model names, timestamps, usage token
+counts). It writes a `MANIFEST.md` receipt describing exactly what's included, and a
+self-check flags any residual secret/email pattern. **sessionlint never transmits
+anything** — you review the folder and share it privately yourself. Redaction is
+best-effort; please open a couple of files and confirm you're comfortable before sending.
 
 ## Development
 
