@@ -7,6 +7,8 @@ independently of the package.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-19
+
 ### Added
 - `--ci` mode: non-interactive lint that exits non-zero when findings meet a
   severity threshold (`--fail-on error|warning|info`, default `error`), for use
