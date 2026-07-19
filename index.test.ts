@@ -467,3 +467,23 @@ describe("--ci gate", () => {
     expect(stderr).toContain("--fail-on must be one of");
   });
 });
+
+describe("export --redact", () => {
+  test("refuses to run without --redact (no accidental raw export)", async () => {
+    const { stderr, exitCode } = await runCliRaw(["export", "--dir", fixtureRoot]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("requires --redact");
+  });
+
+  test("writes a redacted, flattened session file", async () => {
+    await seedProject("model-switch.jsonl");
+    const outDir = await mkdtemp(join(tmpdir(), "sessionlint-cli-export-"));
+    const { stdout, exitCode } = await runCliRaw(["export", "--redact", "--dir", fixtureRoot, "--out", outDir]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("redacted transcript");
+    expect(stdout).toContain("REVIEW the output before sharing");
+    const { readdir } = await import("fs/promises");
+    expect(await readdir(outDir)).toEqual(["session-001.jsonl"]);
+    await rm(outDir, { recursive: true, force: true });
+  });
+});

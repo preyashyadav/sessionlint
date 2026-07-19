@@ -81,6 +81,7 @@ tells you what happened; it never overrules you.
 | `sessionlint sessions` | List sessions: id, date, turns, API-equivalent cost estimate |
 | `sessionlint explain [<rule>]` | What a rule detects, why it costs, how to fix it |
 | `sessionlint doctor` | Environment check: where sessions are read from, how many found, pricing freshness |
+| `sessionlint export --redact` | Write redacted copies of your sessions (prose/paths/secrets removed) so you can share history. `--out <dir>` |
 | `sessionlint --verify` | Replay-audit findings with real, billed API calls — cost preview + confirmation first |
 | `sessionlint statusline` | Burn gauge for Claude Code's `statusLine.command` |
 | `sessionlint budget set <usd>` | Per-session $ budget for the statusline sentinel (`status` / `off`) |

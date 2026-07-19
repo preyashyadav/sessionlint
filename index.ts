@@ -93,6 +93,7 @@ import {
 } from "./src/guard/watch";
 import type { WatchOptions } from "./src/guard/watch";
 import { encodeProjectPath } from "./src/guard/loop/project-cost";
+import { runExport, renderExportSummary } from "./src/export/run";
 import { sendDesktopNotification } from "./src/pilot/desktop-notify";
 import { join } from "path";
 import { parseCommandArgv } from "./src/cli/command-argv";
@@ -532,6 +533,9 @@ AUDIT (read-only, the default)
   sessionlint explain [<rule>]      what a rule detects, why it costs you, how to fix it
   sessionlint doctor                environment check: where sessions are read from, how
                                     many were found, pricing-table freshness
+  sessionlint export --redact       write redacted copies of your sessions to a directory
+                                    (prose/paths/secrets removed) so you can share history
+                                    [--dir <path>] [--out <dir>]
   sessionlint --verify              replay-audit findings with real, billed API calls
                                     (asks for confirmation first)  [--sample-n <n>] [--yes]
 
@@ -606,6 +610,25 @@ async function runDoctorCommand(): Promise<void> {
   console.log(`  pricing table       retrieved ${PRICING_TABLE.retrievedAt}, ${staleness.daysSince} day(s) old — ${staleNote}`);
 }
 
+async function runExportCommand(args: string[]): Promise<void> {
+  // --redact is mandatory: there is no raw export, so a user can never accidentally
+  // write un-redacted transcripts to a shareable directory.
+  if (!args.includes("--redact")) {
+    console.error(
+      "sessionlint export requires --redact (there is no raw export).\n" +
+        "Usage: sessionlint export --redact [--dir <path>] [--out <dir>]"
+    );
+    process.exit(2);
+  }
+  const dirIndex = args.indexOf("--dir");
+  const root = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : undefined;
+  const outIndex = args.indexOf("--out");
+  const outDir = outIndex !== -1 && args[outIndex + 1] ? args[outIndex + 1]! : "sessionlint-export";
+
+  const summary = await runExport({ root, outDir });
+  console.log(renderExportSummary(summary));
+}
+
 async function runSessionsCommand(args: string[]): Promise<void> {
   const dirIndex = args.indexOf("--dir");
   const root = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : defaultRoot();
@@ -651,7 +674,7 @@ async function runSessionsCommand(args: string[]): Promise<void> {
 const KNOWN_SUBCOMMANDS = new Set([
   "statusline", "hook", "auto-delegate", "budget", "run", "loop", "report", "watch",
   "install-hook", "uninstall-hook", "hook-gate", "explain", "doctor", "sessions",
-  "help", "version",
+  "export", "help", "version",
 ]);
 
 async function main(): Promise<void> {
@@ -680,6 +703,11 @@ async function main(): Promise<void> {
 
   if (args[0] === "sessions") {
     await runSessionsCommand(args);
+    return;
+  }
+
+  if (args[0] === "export") {
+    await runExportCommand(args.slice(1));
     return;
   }
 

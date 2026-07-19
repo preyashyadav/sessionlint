@@ -7,6 +7,16 @@ independently of the package.
 
 ## [Unreleased]
 
+### Added
+- `sessionlint export --redact`: writes redacted copies of your session transcripts
+  to a directory so you can share history (e.g. donate to a validation corpus).
+  Prose, file contents, paths, filenames, secrets, and free-text object keys are
+  removed; model names, tool names, timestamps, entry types, and usage token counts
+  are preserved (so the output is still analyzable). Output files are flattened to
+  `session-NNN.jsonl` (never a source-derived name), and a post-redaction self-check
+  flags any residual secret/email pattern. `--redact` is mandatory — there is no raw
+  export. Redaction is best-effort; the output must be reviewed before sharing.
+
 ## [0.3.0] - 2026-07-19
 
 ### Added
