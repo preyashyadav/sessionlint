@@ -36,7 +36,7 @@ Excerpt of real output, run against this repo's synthetic test fixtures:
 ```
 $ sessionlint
 
-sessionlint · 3 sessions analyzed
+sessionlint · 2 sessions analyzed
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   session  syntheti  2 turns
@@ -52,19 +52,19 @@ sessionlint · 3 sessions analyzed
   session cost: $0.04 API-equivalent · could plausibly have been ~$0.03–$0.04
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  session  syntheti  2 turns
+  session  syntheti  5 turns
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  ⚠ MISSING-CLEAR-AT-TOPIC-BOUNDARY turns 1–2                $0.03–$0.64
-    Context grew to ~612,000 tokens and was never cleared or compacted
+  ⚠ MISSING-CLEAR-AT-TOPIC-BOUNDARY turns 1–5                $0.19–$2.19
+    Context grew to ~802,000 tokens and was never cleared or compacted
     for the rest of the session — consider /clear or /compact at a
     natural topic boundary.
     → sessionlint explain missing-clear-at-topic-boundary
 
-  session cost: $0.83 API-equivalent · could plausibly have been ~$0.19–$0.80
+  session cost: $2.71 API-equivalent · could plausibly have been ~$0.52–$2.52
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  3 findings across 3 flagged sessions · replay-audit with: sessionlint --verify
+  2 findings across 2 flagged sessions · replay-audit with: sessionlint --verify
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -98,7 +98,7 @@ tells you what happened; it never overrules you.
 |---|---|
 | `cache-nuke` | Fresh-input processing after a model switch, with TTL-aware attribution and dynamic severity |
 | `late-compaction` | Context filled up until auto-compaction hit, after carrying the excess for many turns |
-| `giant-file-read` | A 1,000+ line file read whole into context instead of Grep/offset reads |
+| `giant-file-read` | A single read pulling 1,000+ lines *into context* (offset-limited reads of big files don't count) |
 | `missing-clear-at-topic-boundary` | Context grew huge and never got a `/clear` or `/compact` |
 | `repeated-identical-prompt` | The same prompt retried verbatim — the first attempt's cost bought nothing |
 

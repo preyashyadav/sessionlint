@@ -33,7 +33,10 @@ export const RULE_DOCS: readonly RuleDoc[] = [
     costNote:
       "Within the default TTL, the range spans two labeled assumptions: high assumes the cache " +
       "would have remained readable; low assumes the content might not have been cached anyway. " +
-      "After the TTL, no avoidable-cost range is attributed to the switch.",
+      "After the TTL, no avoidable-cost range is attributed to the switch. Switches that " +
+      "reprocessed fewer than 1,024 fresh input tokens (the smallest cacheable prefix on any " +
+      "current model) do not fire at all — the cache was plainly still warm and there is nothing " +
+      "to report.",
   },
   {
     id: "late-compaction",
@@ -59,25 +62,31 @@ export const RULE_DOCS: readonly RuleDoc[] = [
     id: "giant-file-read",
     title: "A very large file was read whole into context",
     what:
-      "Fires when a Read tool result spans more than 1,000 lines (threshold calibrated against " +
-      "real local history). Multiple reads of the same file in one turn are deduplicated into " +
-      "one finding with a count.",
+      "Fires when a single Read pulls more than 1,000 lines INTO CONTEXT (the tool result's " +
+      "numLines), not when the file on disk happens to be large. An offset/limit-bounded read of " +
+      "30 lines from a 10,000-line file does not fire — that is the recommended behaviour. " +
+      "Multiple reads in one turn are deduplicated into one finding with a count.",
     why:
-      "The whole file becomes context that every subsequent API call in the session re-carries. " +
-      "A 10,000-line file is roughly 100k tokens of mostly-unused ballast.",
+      "Lines loaded into context are re-carried by every subsequent API call in the session. " +
+      "Reading 10,000 lines is roughly 100k tokens of mostly-unused ballast; reading 30 lines " +
+      "out of that same file is not.",
     fix:
       "Use Grep to find the relevant part, or an offset/limit-bounded Read for the section you " +
       "actually need. Point the model at specific line ranges instead of whole files.",
     costNote:
-      "ASSUMPTION (labeled in every finding): ~10 tokens per source line, because the transcript " +
-      "records only line counts, never per-tool-result token counts.",
+      "Tokens are measured from the tool result's real content (~4 chars/token) whenever the " +
+      "transcript carries it, and only the over-threshold share is counted. The older ~10 " +
+      "tokens-per-line figure is now a fallback, used only when content is unavailable (e.g. " +
+      "sanitized fixtures), and is labeled in the finding when it applies.",
   },
   {
     id: "missing-clear-at-topic-boundary",
     title: "Context grew huge and was never cleared or compacted",
     what:
-      "Fires once per session, at the first turn where context crosses a high absolute size " +
-      "threshold and then never gets a /clear or /compact for the rest of the session. " +
+      "Fires once per session, at the first turn where context crosses 75% of the model's " +
+      "context window (750k of a 1M window; 150k on Haiku's 200k) and then never gets a /clear " +
+      "or /compact for the rest of the session. Does not fire when the crossing happens in the " +
+      "last few turns — advising a /clear on a session that is already ending is not actionable. " +
       "Deliberately conservative (precision over recall): there is no real topic-boundary marker " +
       "in the transcript schema, so only unambiguous cases fire.",
     why:
@@ -88,8 +97,10 @@ export const RULE_DOCS: readonly RuleDoc[] = [
       "stale detail) before continuing.",
     costNote:
       "Low bound: only the post-crossing growth was avoidable. High bound: a /clear would have " +
-      "dropped the entire carried context. Both bill carried context at cache-read rate — real " +
-      "cache expiries bill higher, so even the high bound is not inflated.",
+      "dropped the entire carried context. The high bound is a CEILING, not an expectation — it " +
+      "assumes none of the carried context was needed afterwards, which is usually false in a " +
+      "session that kept doing useful work; treat the low bound as the realistic figure. Both " +
+      "bill carried context at cache-read rate (the cheapest rate), so neither is inflated.",
   },
   {
     id: "repeated-identical-prompt",
@@ -97,7 +108,10 @@ export const RULE_DOCS: readonly RuleDoc[] = [
     what:
       "Fires when a human prompt is submitted again, byte-identical, immediately after the " +
       "previous turn — the shape of 'retry right after an unsatisfying response'. Distant " +
-      "coincidental repeats do not fire.",
+      "coincidental repeats do not fire. Harness-injected text is ignored: slash-command echoes " +
+      "(<local-command-caveat>, <command-name>, ...) and <system-reminder> blocks look like user " +
+      "messages in the transcript but are not human-authored, so two identical ones in a row are " +
+      "the harness being consistent, not a retry.",
     why:
       "An immediate verbatim retry implies the first attempt's response was discarded — its " +
       "cost bought nothing. Rephrasing with more direction usually beats re-rolling the dice.",

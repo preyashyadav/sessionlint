@@ -21,17 +21,33 @@ export interface ResolvedRate {
   cacheWrite1hPerMTok: number;
   cacheReadPerMTok: number;
   introRateExpired: boolean;
+  /** Intro rate lapsed and no published replacement exists — cost is knowingly understated. */
+  introRateExpiredWithoutReplacement: boolean;
 }
 
 function resolve(model: string, rate: ModelRate, asOf: Date): ResolvedRate {
+  const introRateExpired = rate.effectiveUntil ? asOf > new Date(rate.effectiveUntil) : false;
+
+  // Once the intro window closes, bill the published standard rate. Without this the
+  // engine keeps charging an expired intro price forever and silently under-reports
+  // (Sonnet 5: $2/$10 -> $3/$15, i.e. 33% low). When the post-intro rate is NOT
+  // published we cannot invent one — keep the intro rate and let `introRateExpired`
+  // drive a visible warning instead of a fabricated number (D-004).
+  const expiredWithKnownRate = introRateExpired && rate.postIntroRate !== undefined;
+  const inputPerMTok = expiredWithKnownRate ? rate.postIntroRate!.inputPerMTok : rate.inputPerMTok;
+  const outputPerMTok = expiredWithKnownRate ? rate.postIntroRate!.outputPerMTok : rate.outputPerMTok;
+
   return {
     model,
-    inputPerMTok: rate.inputPerMTok,
-    outputPerMTok: rate.outputPerMTok,
-    cacheWrite5mPerMTok: rate.inputPerMTok * CACHE_WRITE_5M_MULTIPLIER,
-    cacheWrite1hPerMTok: rate.inputPerMTok * CACHE_WRITE_1H_MULTIPLIER,
-    cacheReadPerMTok: rate.inputPerMTok * CACHE_READ_MULTIPLIER,
-    introRateExpired: rate.effectiveUntil ? asOf > new Date(rate.effectiveUntil) : false,
+    inputPerMTok,
+    outputPerMTok,
+    cacheWrite5mPerMTok: inputPerMTok * CACHE_WRITE_5M_MULTIPLIER,
+    cacheWrite1hPerMTok: inputPerMTok * CACHE_WRITE_1H_MULTIPLIER,
+    cacheReadPerMTok: inputPerMTok * CACHE_READ_MULTIPLIER,
+    introRateExpired,
+    // True only when the intro rate lapsed and we have no published replacement —
+    // the one case where the reported cost is knowingly understated.
+    introRateExpiredWithoutReplacement: introRateExpired && rate.postIntroRate === undefined,
   };
 }
 

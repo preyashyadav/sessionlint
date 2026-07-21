@@ -4,7 +4,7 @@
 
 ## What it detects
 
-Fires when a human prompt is submitted again, byte-identical, immediately after the previous turn — the shape of 'retry right after an unsatisfying response'. Distant coincidental repeats do not fire.
+Fires when a human prompt is submitted again, byte-identical, immediately after the previous turn — the shape of 'retry right after an unsatisfying response'. Distant coincidental repeats do not fire. Harness-injected text is ignored: slash-command echoes (<local-command-caveat>, <command-name>, ...) and <system-reminder> blocks look like user messages in the transcript but are not human-authored, so two identical ones in a row are the harness being consistent, not a retry.
 
 ## Why it costs you
 

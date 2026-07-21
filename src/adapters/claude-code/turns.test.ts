@@ -42,6 +42,36 @@ describe("buildSession: minimal-session.jsonl", () => {
   });
 });
 
+describe("buildSession: multi-block-response.jsonl (usage dedupe)", () => {
+  // TP: one API response written across 3 JSONL lines (thinking + 2x tool_use), each line
+  // repeating the FULL identical usage bag — the real Claude Code shape. Before the dedupe,
+  // buildUsage summed all 3 and inflated this turn ~3x. Every synthetic fixture prior to this
+  // one was single-API-call-per-turn, which is why the bug survived the whole suite.
+  test("counts one API response once, not once per content block", async () => {
+    const { session } = await loadAndBuild(join(SYNTHETIC_DIR, "multi-block-response.jsonl"));
+    expect(session.turns).toHaveLength(1);
+    const usage = session.turns[0]?.usage;
+
+    // msg_A counted once (not 3x) + msg_B once.
+    expect(usage?.outputTokens).toBe(839 + 200);
+    expect(usage?.cacheReadInputTokens).toBe(19_595 + 21_000);
+    expect(usage?.inputTokens).toBe(10 + 5);
+    expect(usage?.cacheCreationInputTokens).toBe(100 + 50);
+
+    // The raw bag array is what the cost engine's cache-write breakdown reads —
+    // it must be deduped too, or 5m/1h cache writes inflate independently.
+    expect(usage?.raw).toHaveLength(2);
+  });
+
+  // TN: the 3 duplicate lines are still real entries and must remain visible to every
+  // NON-billing consumer — 2 distinct tool_use blocks are 2 genuine reads, not duplicates.
+  test("deduping usage does not hide distinct content blocks from other consumers", async () => {
+    const { session } = await loadAndBuild(join(SYNTHETIC_DIR, "multi-block-response.jsonl"));
+    expect(session.turns[0]?.content.toolUseNames).toEqual(["Read", "Read"]);
+    expect(session.turns[0]?.entries.length).toBeGreaterThan(2);
+  });
+});
+
 describe("buildSession: model-switch.jsonl", () => {
   test("two turns, exactly one model switch fires", async () => {
     const { session } = await loadAndBuild(join(SYNTHETIC_DIR, "model-switch.jsonl"));

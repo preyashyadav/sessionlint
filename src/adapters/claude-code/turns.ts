@@ -154,12 +154,39 @@ function buildContentSummary(entries: Entry[]): ContentSummary {
   return { hasText, toolUseNames, toolResultCount };
 }
 
+/**
+ * Identity of the ONE API response an entry belongs to. Claude Code writes a
+ * separate JSONL line per content block (thinking, each tool_use, ...), and every
+ * one of those lines repeats the FULL usage bag for the single response that
+ * produced them — so summing per-entry counts one response's tokens N times.
+ * Verified against real transcripts: msg_011CcxpNVKp4HqemcBcoyeTb appears on 3
+ * lines (one `thinking`, two `tool_use`), each claiming out=839, cache_read=19595.
+ *
+ * message.id and requestId agree exactly on real data (447 unique from 803 lines
+ * in one session); message.id is preferred, requestId is the fallback. An entry
+ * carrying neither identifier is treated as its own response — never dropped,
+ * since an unidentifiable bag is more likely a schema gap than a duplicate (C-1:
+ * degrade gracefully, never silently discard billable usage).
+ */
+function responseKeyOf(entry: Entry): string {
+  const raw = entry.raw as { message?: { id?: unknown }; requestId?: unknown };
+  const messageId = raw.message?.id;
+  if (typeof messageId === "string" && messageId.length > 0) return `msg:${messageId}`;
+  if (typeof raw.requestId === "string" && raw.requestId.length > 0) return `req:${raw.requestId}`;
+  return `uuid:${entry.uuid ?? Math.random()}`;
+}
+
 function buildUsage(entries: Entry[]): UsageTotals | null {
   const bags: Record<string, unknown>[] = [];
+  const seenResponses = new Set<string>();
   for (const e of entries) {
     if (e.kind !== "assistant-message" && e.kind !== "assistant-error") continue;
     const usage = (e.raw as { message?: { usage?: Record<string, unknown> } }).message?.usage;
-    if (usage) bags.push(usage);
+    if (!usage) continue;
+    const key = responseKeyOf(e);
+    if (seenResponses.has(key)) continue; // same API response, another content block
+    seenResponses.add(key);
+    bags.push(usage);
   }
   if (bags.length === 0) return null;
 

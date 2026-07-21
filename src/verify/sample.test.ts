@@ -36,10 +36,10 @@ describe("stratifiedSample: clean candidates", () => {
     expect(result.sampled[0]?.model).toBe("claude-opus-4-8");
   });
 
-  test("missing-clear.jsonl's two clean candidates are both sampled", async () => {
+  test("missing-clear.jsonl's five clean candidates are all sampled", async () => {
     const loaded = [await loadSession(join(SYNTHETIC_DIR, "missing-clear.jsonl"))];
     const result = stratifiedSample(loaded);
-    expect(result.sampled).toHaveLength(2);
+    expect(result.sampled).toHaveLength(5);
     expect(result.excluded).toEqual([]);
   });
 });
@@ -61,6 +61,6 @@ describe("stratifiedSample: n is tunable, default 40", () => {
   test("never samples more than exist even if n is large", async () => {
     const loaded = [await loadSession(join(SYNTHETIC_DIR, "missing-clear.jsonl"))];
     const result = stratifiedSample(loaded, { n: 1000 });
-    expect(result.sampled).toHaveLength(2);
+    expect(result.sampled).toHaveLength(5);
   });
 });

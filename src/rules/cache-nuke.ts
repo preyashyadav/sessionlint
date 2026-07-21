@@ -30,6 +30,14 @@ import type { CostImpactRange, Finding, Rule } from "./types";
 export const CACHE_NUKE_RULE_ID = "cache-nuke";
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Minimum fresh-input tokens before a model switch counts as a cache nuke. Below this
+ * the cache was plainly still warm and there is nothing to report. 1,024 is the smallest
+ * cacheable prefix any current model supports, so a switch that reprocessed less than
+ * that could not have invalidated a cache entry worth naming.
+ */
+export const MIN_REPROCESSED_TOKENS = 1_024;
+
 function latestTurnTimestamp(turn: Session["turns"][number]): Date | null {
   let latest: Date | null = null;
   for (const entry of turn.entries) {
@@ -50,6 +58,14 @@ export function detectCacheNukes(session: Session, asOf: Date = new Date()): Fin
     const fromTurn = session.turns[toIndex - 1]!;
 
     const reprocessedTokens = firstCallInputTokens(toTurn);
+
+    // Noise floor. A model switch that reprocessed a handful of tokens did not nuke a
+    // cache — it means the cache was still warm and the switch cost essentially nothing.
+    // Observed on real history: a switch reported "~1 tokens billed as fresh input" and
+    // then correctly concluded no cost was attributable, i.e. it printed a finding in
+    // order to say nothing happened. Emitting nothing is the honest output.
+    if (reprocessedTokens < MIN_REPROCESSED_TOKENS) continue;
+
     const contextSizeAtSwitch = turnContextSize(fromTurn);
     const previousTimestamp = latestTurnTimestamp(fromTurn);
     const switchTimestamp = sw.atTimestamp ?? toTurn.startedAt;

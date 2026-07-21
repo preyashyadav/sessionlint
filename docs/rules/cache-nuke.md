@@ -16,7 +16,7 @@ Pick the model before the context grows, or make the switch at a natural boundar
 
 ## How the $ range is computed
 
-Within the default TTL, the range spans two labeled assumptions: high assumes the cache would have remained readable; low assumes the content might not have been cached anyway. After the TTL, no avoidable-cost range is attributed to the switch.
+Within the default TTL, the range spans two labeled assumptions: high assumes the cache would have remained readable; low assumes the content might not have been cached anyway. After the TTL, no avoidable-cost range is attributed to the switch. Switches that reprocessed fewer than 1,024 fresh input tokens (the smallest cacheable prefix on any current model) do not fire at all — the cache was plainly still warm and there is nothing to report.
 
 ---
 

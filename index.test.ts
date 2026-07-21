@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, copyFile } from "fs/promises";
+import { mkdtemp, mkdir, rm, copyFile, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -381,7 +381,10 @@ describe("utility commands (help, version, explain, doctor, sessions)", () => {
   test("version prints the version and exits 0", async () => {
     const { stdout, exitCode } = await runCliRaw(["version"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("0.1.0");
+    // Assert against package.json rather than a literal: the literal is exactly how
+    // index.ts's VERSION silently drifted to 0.1.0 while the package shipped 0.4.0.
+    const pkg = JSON.parse(await readFile(join(import.meta.dir, "package.json"), "utf8"));
+    expect(stdout).toContain(pkg.version);
   });
 
   test("explain with no arg lists all five rules", async () => {

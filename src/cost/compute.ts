@@ -63,7 +63,11 @@ function zeroBreakdown(turnId: string, model: string | null): TurnCostBreakdown 
 export function computeTurnCost(turn: Turn, asOf: Date = new Date()): TurnCostBreakdown {
   if (!turn.model) return zeroBreakdown(turn.turnId, turn.modelRaw);
 
-  const rate = getModelRate(turn.model, asOf);
+  // Price a turn at the rate in effect WHEN IT RAN, not when the report is generated.
+  // A session from inside an intro-pricing window keeps its intro rate forever; only
+  // turns that actually ran after the boundary get the standard rate. Falling back to
+  // `asOf` covers transcripts with no usable timestamp.
+  const rate = getModelRate(turn.model, turn.startedAt ?? asOf);
   if (!rate) return zeroBreakdown(turn.turnId, turn.model);
 
   const usage = turn.usage;

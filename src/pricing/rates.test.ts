@@ -30,6 +30,42 @@ describe("getModelRate", () => {
     const rate = getModelRate("claude-opus-4-8", new Date("2099-01-01"));
     expect(rate?.introRateExpired).toBe(false);
   });
+
+  // Regression: introRateExpired used to be computed and never acted on, so an expired
+  // intro rate kept billing forever — Sonnet 5 would have under-reported by 33% from
+  // 2026-09-01 onward, with no warning anywhere.
+  test("intro rate still applies inside the window", () => {
+    const r = getModelRate("claude-sonnet-5", new Date("2026-08-01"));
+    expect(r?.inputPerMTok).toBe(2.0);
+    expect(r?.outputPerMTok).toBe(10.0);
+    expect(r?.introRateExpired).toBe(false);
+  });
+
+  test("standard rate takes over automatically once the intro window closes", () => {
+    const r = getModelRate("claude-sonnet-5", new Date("2026-09-01"));
+    expect(r?.inputPerMTok).toBe(3.0);
+    expect(r?.outputPerMTok).toBe(15.0);
+    expect(r?.introRateExpired).toBe(true);
+    expect(r?.introRateExpiredWithoutReplacement).toBe(false); // published replacement exists
+  });
+
+  test("derived cache rates follow the post-intro input rate, not the stale intro one", () => {
+    const r = getModelRate("claude-sonnet-5", new Date("2026-09-01"));
+    expect(r?.cacheWrite5mPerMTok).toBeCloseTo(3.75, 5); // 3.0 * 1.25
+    expect(r?.cacheWrite1hPerMTok).toBeCloseTo(6.0, 5); // 3.0 * 2
+    expect(r?.cacheReadPerMTok).toBeCloseTo(0.3, 5); // 3.0 * 0.1
+  });
+
+  test("an expired intro rate with NO published replacement keeps the old rate and flags it", () => {
+    const table: PricingTable = {
+      retrievedAt: "2026-01-01",
+      sourceUrl: "https://example.com",
+      models: { "claude-hypothetical": { inputPerMTok: 1, outputPerMTok: 5, effectiveUntil: "2026-02-01" } },
+    };
+    const r = getModelRate("claude-hypothetical", new Date("2026-03-01"), table);
+    expect(r?.inputPerMTok).toBe(1); // never invent a replacement rate
+    expect(r?.introRateExpiredWithoutReplacement).toBe(true);
+  });
 });
 
 describe("checkStaleness", () => {

@@ -48,18 +48,54 @@ export function isCompactionEntry(entry: Entry): boolean {
   return raw.type === "system" && raw.compactMetadata !== null && typeof raw.compactMetadata === "object";
 }
 
-/** Extracts the human-authored prompt text from a turn's first real user message, if any. */
+/**
+ * Text the HARNESS injects into a user turn — not something the human typed.
+ * Claude Code wraps slash-command output (`/model`, `/clear`, ...) in
+ * <local-command-*> / <command-*> blocks and injects <system-reminder> blocks,
+ * all of which land in `message.content` looking exactly like a user message.
+ *
+ * Two identical harness blocks in a row are the harness being consistent, not a
+ * human retrying — repeated-identical-prompt fired on a real `/model` echo before
+ * this filter existed. Compaction summaries are already excluded upstream by the
+ * "meta" entry classification; this is the same idea for slash-command echoes.
+ */
+const HARNESS_BLOCK_PREFIXES = [
+  "<local-command-caveat>",
+  "<local-command-stdout>",
+  "<local-command-stderr>",
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<system-reminder>",
+] as const;
+
+export function isHarnessInjectedText(text: string): boolean {
+  const t = text.trimStart();
+  return HARNESS_BLOCK_PREFIXES.some((p) => t.startsWith(p));
+}
+
+/**
+ * Extracts the human-authored prompt text from a turn's first real user message, if any.
+ * Harness-injected blocks are skipped — they are not human-authored input.
+ */
 export function extractPromptText(turn: Turn): string | null {
   for (const entry of turn.entries) {
     if (entry.kind !== "user-message") continue;
     const raw = entry.raw as { message?: { content?: unknown } };
     const content = raw.message?.content;
-    if (typeof content === "string" && content.length > 0) return content.trim();
+    if (typeof content === "string" && content.length > 0) {
+      const t = content.trim();
+      if (!isHarnessInjectedText(t)) return t;
+      continue;
+    }
     if (Array.isArray(content)) {
       for (const block of content) {
         if (block && typeof block === "object" && (block as { type?: unknown }).type === "text") {
           const text = (block as { text?: unknown }).text;
-          if (typeof text === "string" && text.length > 0) return text.trim();
+          if (typeof text === "string" && text.length > 0) {
+            const t = text.trim();
+            if (!isHarnessInjectedText(t)) return t;
+          }
         }
       }
     }

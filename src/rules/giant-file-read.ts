@@ -12,20 +12,51 @@ import type { CostImpactRange, Finding, Rule } from "./types";
 
 export const GIANT_FILE_READ_RULE_ID = "giant-file-read";
 export const GIANT_FILE_READ_LINE_THRESHOLD = 1000;
-/** ASSUMPTION: ~10 tokens per source line. The transcript records only line counts
- * (toolUseResult.file.totalLines), never the content's real token count — the sanitizer
- * length-buckets string content, and even raw logs don't carry per-tool-result token
- * figures. 10/line ≈ 40-60 chars/line at ~4-5 chars/token, labeled in every finding. */
+/** FALLBACK ASSUMPTION only — used when a tool_result carries no readable content
+ * (sanitized fixtures length-bucket string content). Real transcripts carry
+ * `toolUseResult.file.content`, and its character count is used in preference to this. */
 export const TOKENS_PER_LINE_ASSUMPTION = 10;
+/** Standard chars-per-token approximation, used when real content IS available. */
+export const CHARS_PER_TOKEN = 4;
 
-function totalLinesOf(entry: Entry): number | null {
+interface GiantRead {
+  /** Lines actually loaded into context by THIS read. */
+  linesRead: number;
+  /** Size of the whole file on disk — context, not cost. */
+  totalLines: number | null;
+  /** Real token estimate from the content that entered context, when recoverable. */
+  measuredTokens: number | null;
+}
+
+/**
+ * A Read tool_result carries BOTH `numLines` (what this read actually pulled into
+ * context) and `totalLines` (how big the file is on disk). Only the first is a cost.
+ *
+ * This rule previously keyed on `totalLines`, which made it fire on the SIZE OF THE FILE
+ * rather than on what was loaded — so an offset-limited Read of 30 lines from a
+ * 10,437-line file was reported as a 10,437-line read and billed accordingly. Measured
+ * against real history that overstated avoidable tokens by 51x (571,540 assumed vs
+ * ~11,162 actually in context), and flagged the user for doing exactly what the rule
+ * recommends. `numLines` is the honest trigger and the honest cost basis.
+ */
+function giantReadOf(entry: Entry): GiantRead | null {
   const raw = entry.raw as { toolUseResult?: unknown };
   const tur = raw.toolUseResult;
   if (!tur || typeof tur !== "object") return null;
   const file = (tur as { file?: unknown }).file;
   if (!file || typeof file !== "object") return null;
-  const n = (file as { totalLines?: unknown }).totalLines;
-  return typeof n === "number" ? n : null;
+
+  const f = file as { numLines?: unknown; totalLines?: unknown; content?: unknown };
+  const totalLines = typeof f.totalLines === "number" ? f.totalLines : null;
+  // Prefer numLines; fall back to totalLines only when numLines is absent (older schema),
+  // where the whole file really was the read.
+  const linesRead = typeof f.numLines === "number" ? f.numLines : totalLines;
+  if (linesRead === null) return null;
+
+  const measuredTokens =
+    typeof f.content === "string" ? Math.ceil(f.content.length / CHARS_PER_TOKEN) : null;
+
+  return { linesRead, totalLines, measuredTokens };
 }
 
 export function detectGiantFileReads(session: Session, asOf: Date = new Date()): Finding[] {
@@ -36,22 +67,29 @@ export function detectGiantFileReads(session: Session, asOf: Date = new Date()):
     // A turn can re-read the same giant file several times (verified against real history:
     // 5 genuinely distinct entries, same file, one turn) — one finding per turn keeps the
     // screenshot-optimized report readable instead of repeating the same line 5 times.
-    const giantReads: number[] = [];
+    const giantReads: GiantRead[] = [];
     for (const entry of turn.entries) {
-      const lines = totalLinesOf(entry);
-      if (lines !== null && lines > GIANT_FILE_READ_LINE_THRESHOLD) giantReads.push(lines);
+      const read = giantReadOf(entry);
+      if (read && read.linesRead > GIANT_FILE_READ_LINE_THRESHOLD) giantReads.push(read);
     }
     if (giantReads.length === 0) continue;
 
-    const maxLines = Math.max(...giantReads);
+    const maxLines = Math.max(...giantReads.map((r) => r.linesRead));
     const countNote = giantReads.length > 1 ? `, read ${giantReads.length} times in this turn` : "";
 
     // Counterfactual: each read stays within the threshold (Grep / offset-limited Read).
-    // Every read past that adds its excess lines to context as a separate tool_result —
-    // N re-reads really do mean N copies carried.
-    const avoidableTokens =
-      giantReads.reduce((sum, lines) => sum + (lines - GIANT_FILE_READ_LINE_THRESHOLD), 0) *
-      TOKENS_PER_LINE_ASSUMPTION;
+    // Every read past that adds its excess to context as a separate tool_result — N
+    // re-reads really do mean N copies carried. When the real content is recoverable the
+    // excess is prorated from MEASURED tokens; the per-line constant is only a fallback.
+    const measuredEverywhere = giantReads.every((r) => r.measuredTokens !== null);
+    const avoidableTokens = giantReads.reduce((sum, r) => {
+      const excessLines = r.linesRead - GIANT_FILE_READ_LINE_THRESHOLD;
+      if (r.measuredTokens !== null) {
+        // Prorate the measured token count down to just the over-threshold portion.
+        return sum + Math.ceil(r.measuredTokens * (excessLines / r.linesRead));
+      }
+      return sum + excessLines * TOKENS_PER_LINE_ASSUMPTION;
+    }, 0);
     const rate = resolveTurnRate(session, turnIndex, asOf);
     const turnsAfter = session.turns.length - 1 - turnIndex;
 
@@ -66,7 +104,10 @@ export function detectGiantFileReads(session: Session, asOf: Date = new Date()):
         high: mtok * rate.cacheWrite5mPerMTok + mtok * rate.cacheReadPerMTok * turnsAfter,
       };
       assumptions = [
-        `~${TOKENS_PER_LINE_ASSUMPTION} tokens per line (the transcript records line counts, not token counts)`,
+        measuredEverywhere
+          ? `token count measured from the tool result's real content (~${CHARS_PER_TOKEN} chars/token)`
+          : `~${TOKENS_PER_LINE_ASSUMPTION} tokens per line (this transcript carries no readable tool-result content)`,
+        "counts only the lines this read actually loaded into context, not the file's total size",
         `counterfactual: each read stays within the ${GIANT_FILE_READ_LINE_THRESHOLD.toLocaleString()}-line threshold (Grep or offset-limited Read)`,
         "low: excess billed once at input rate; high: cache-written once, then carried as cache reads to session end",
       ];

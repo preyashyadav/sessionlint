@@ -22,7 +22,31 @@ import type { Session } from "../adapters/claude-code/types";
 import type { CostImpactRange, Finding, Rule } from "./types";
 
 export const MISSING_CLEAR_RULE_ID = "missing-clear-at-topic-boundary";
-export const CONTEXT_SIZE_THRESHOLD = 500_000;
+
+/**
+ * Fraction of the model's context window at which carrying everything forward starts
+ * to look like a real habit rather than a normal long session. The old flat 500,000
+ * fired at HALF of a 1M window and flagged nearly every substantial session.
+ */
+export const CONTEXT_WINDOW_FRACTION = 0.75;
+
+/** Context windows are 1M on every current model except Haiku (200K). Verified 2026-07-20. */
+const DEFAULT_CONTEXT_WINDOW = 1_000_000;
+const CONTEXT_WINDOWS: Record<string, number> = {
+  "claude-haiku-4-5": 200_000,
+};
+
+/**
+ * A crossing this close to the end of the session is not actionable — by the time the
+ * context grew, the session was already over. Telling someone to /clear at turn 5 of a
+ * 6-turn session is noise, not advice.
+ */
+export const MIN_TURNS_AFTER_CROSSING = 3;
+
+function contextThresholdFor(model: string | null): number {
+  const window = (model !== null ? CONTEXT_WINDOWS[model] : undefined) ?? DEFAULT_CONTEXT_WINDOW;
+  return window * CONTEXT_WINDOW_FRACTION;
+}
 
 export function detectMissingClearAtTopicBoundary(session: Session, asOf: Date = new Date()): Finding[] {
   const turns = session.turns;
@@ -30,7 +54,10 @@ export function detectMissingClearAtTopicBoundary(session: Session, asOf: Date =
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i]!;
     const contextAtCrossing = turnContextSize(turn);
-    if (contextAtCrossing <= CONTEXT_SIZE_THRESHOLD) continue;
+    if (contextAtCrossing <= contextThresholdFor(turn.model)) continue;
+
+    // Not actionable if the session ended right after the crossing.
+    if (turns.length - 1 - i < MIN_TURNS_AFTER_CROSSING) continue;
 
     const laterEntries = turns.slice(i).flatMap((t) => t.entries);
     if (laterEntries.some(isCompactionEntry)) continue; // already handled — not "missing"
@@ -45,7 +72,12 @@ export function detectMissingClearAtTopicBoundary(session: Session, asOf: Date =
         "counterfactual: /clear or /compact at the flagged turn",
         `low: the action only stopped further context growth (kept ~${contextAtCrossing.toLocaleString()} tokens); only post-crossing growth counted`,
         "high: the action was a /clear (kept ~nothing); the entire carried context from the crossing onward counted",
-        "both bounds bill carried context at cache-read rate — real cache expiries would bill higher",
+        // Stated plainly: the high bound is a ceiling, not an expectation. It requires that
+        // none of the carried context was actually needed by the later turns — rarely true
+        // in a session that kept doing productive work. Treat the LOW bound as the realistic
+        // figure and the high bound as the theoretical maximum.
+        "the high bound assumes NONE of the carried context was needed afterwards — usually false; treat low as the realistic figure",
+        "both bounds bill carried context at cache-read rate (the cheapest rate), so neither is inflated",
       ];
     }
 

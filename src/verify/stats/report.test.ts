@@ -41,10 +41,10 @@ function makeJudgeResult(sessionId: string, turnId: string, finalVerdict: ThreeT
 }
 
 describe("buildVerifyReport: end-to-end over a real fixture", () => {
-  test("missing-clear.jsonl's two large-stratum candidates roll up correctly", async () => {
+  test("missing-clear.jsonl's five large-stratum candidates roll up correctly", async () => {
     const loaded = [await loadSession(join(SYNTHETIC_DIR, "missing-clear.jsonl"))];
     const sampleResult = stratifiedSample(loaded);
-    expect(sampleResult.sampled).toHaveLength(2); // both candidates survive exclusion
+    expect(sampleResult.sampled).toHaveLength(5); // all candidates survive exclusion
 
     const judgeResults = sampleResult.sampled.map((c, i) =>
       makeJudgeResult(c.sessionId, c.turnId, i === 0 ? "equivalent" : "not-equivalent")
@@ -52,17 +52,17 @@ describe("buildVerifyReport: end-to-end over a real fixture", () => {
 
     const report = buildVerifyReport(loaded, sampleResult, judgeResults, AS_OF);
 
-    expect(report.totalNominated).toBe(2);
-    expect(report.totalSampled).toBe(2);
+    expect(report.totalNominated).toBe(5);
+    expect(report.totalSampled).toBe(5);
     expect(report.totalExcluded).toBe(0);
 
     const largeStratum = report.perStratum.find((s) => s.stratum === "large")!;
-    expect(largeStratum.nominatedCount).toBe(2);
-    expect(largeStratum.sampledCount).toBe(2);
+    expect(largeStratum.nominatedCount).toBe(5);
+    expect(largeStratum.sampledCount).toBe(5);
     expect(largeStratum.equivalentCount).toBe(1);
-    // 1/2 equivalence rate — Wilson CI must contain 0.5 (see wilson.test.ts's own property tests).
-    expect(largeStratum.equivalenceRateCI.low).toBeLessThanOrEqual(0.5);
-    expect(largeStratum.equivalenceRateCI.high).toBeGreaterThanOrEqual(0.5);
+    // 1/5 equivalence rate — Wilson CI must contain 0.2 (see wilson.test.ts's own property tests).
+    expect(largeStratum.equivalenceRateCI.low).toBeLessThanOrEqual(0.2);
+    expect(largeStratum.equivalenceRateCI.high).toBeGreaterThanOrEqual(0.2);
 
     // Savings range must be non-negative and low <= high.
     expect(largeStratum.savingsRangeUsd).not.toBeNull();

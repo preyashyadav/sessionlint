@@ -27,10 +27,10 @@ describe("nominateCandidates: true positive", () => {
     expect(candidates[0]?.turnId).toBe(session.turns[0]?.turnId);
   });
 
-  test("missing-clear.jsonl: both opus turns are pure text (no tool calls) and both nominated", async () => {
+  test("missing-clear.jsonl: all five opus turns are pure text (no tool calls) and all nominated", async () => {
     const { session } = await loadSession(join(SYNTHETIC_DIR, "missing-clear.jsonl"));
     const candidates = nominateCandidates(session);
-    expect(candidates).toHaveLength(2);
+    expect(candidates).toHaveLength(5);
     expect(candidates.every((c) => c.model === "claude-opus-4-8")).toBe(true);
   });
 });
