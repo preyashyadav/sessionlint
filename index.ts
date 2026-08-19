@@ -52,7 +52,15 @@
 
 import { createInterface } from "readline/promises";
 import { stat } from "fs/promises";
-import { discoverSessions, defaultRoot, newestTranscriptMtime } from "./src/adapters/claude-code/discover";
+import {
+  defaultRoot,
+  discoverConfigRoots,
+  discoverSessions,
+  discoverSessionsAcross,
+  newestTranscriptMtime,
+  resolveRoots,
+  unscannedRoots,
+} from "./src/adapters/claude-code/discover";
 import { loadSession } from "./src/adapters/claude-code/session";
 import { computeSessionCost } from "./src/cost/compute";
 import { checkStaleness, PRICING_TABLE, STALENESS_WARNING_DAYS } from "./src/pricing";
@@ -94,6 +102,7 @@ import {
 import type { WatchOptions } from "./src/guard/watch";
 import { encodeProjectPath } from "./src/guard/loop/project-cost";
 import { runExport, renderExportSummary } from "./src/export/run";
+import { runContribute } from "./src/contribute/run";
 import { sendDesktopNotification } from "./src/pilot/desktop-notify";
 import { join } from "path";
 import { parseCommandArgv } from "./src/cli/command-argv";
@@ -518,7 +527,7 @@ async function runHookGateCommand(args: string[]): Promise<void> {
   process.exit(2);
 }
 
-const VERSION = "0.5.0"; // keep in sync with package.json
+const VERSION = "0.6.0"; // keep in sync with package.json
 
 const HELP_TEXT = `sessionlint ${VERSION} — a linter, gauge, and guard for AI coding sessions
 ccusage shows the bill. sessionlint shows patterns behind it — and helps agent loops land.
@@ -537,6 +546,10 @@ AUDIT (read-only, the default)
                                     (prose/paths/secrets removed) + a MANIFEST.md receipt,
                                     so you can share history  [--out <dir>] [--dry-run]
                                     (--dry-run shows what would be shared, writes nothing)
+  sessionlint send2preyash          Prepare a redacted contribution bundle + mail draft
+                                    (--handle, --last N, --since <date>, --session <id>,
+                                     --to <addr>, --include-reconciliation, --yes)
+  sessionlint contribute            Alias for send2preyash
   sessionlint --verify              replay-audit findings with real, billed API calls
                                     (asks for confirmation first)  [--sample-n <n>] [--yes]
 
@@ -561,7 +574,12 @@ AUTONOMOUS RUNS (GUARD)
   help | version | doctor           you are here
 
 Every counterfactual $ figure is a range with labeled assumptions, never a fake-precise point.
-Docs: https://github.com/preyashyadav/sessionlint`;
+Docs: https://github.com/preyashyadav/sessionlint
+
+Multi-account:
+  --all-roots                       Read every Claude config dir found on this machine
+  --add-root <path>                 Also read this config dir (repeatable)
+`;
 
 function runExplainCommand(args: string[]): void {
   const target = args[1];
@@ -584,6 +602,24 @@ async function runDoctorCommand(): Promise<void> {
   console.log(`  CLAUDE_CONFIG_DIR   ${configDir ?? "(not set — default ~/.claude)"}`);
   const root = defaultRoot(); // prints its own warning if a misplaced literal-~ dir is detected
   console.log(`  sessions root       ${root}`);
+
+  // Every config root on this machine, scanned or not. A sibling root holding
+  // transcripts that nothing reads is the single most misleading state this tool can
+  // be in, so doctor names it explicitly rather than leaving the user to infer it.
+  const allRoots = discoverConfigRoots([root]);
+  if (allRoots.length > 1) {
+    console.log(`  config roots found  ${allRoots.length}`);
+    for (const r of allRoots) {
+      const mark = r.scanned ? "✓ scanned    " : "✗ NOT scanned";
+      console.log(`    ${mark} ${r.label.padEnd(24)} ${r.transcriptCount} transcript(s)`);
+    }
+    const missed = unscannedRoots(allRoots);
+    if (missed.length > 0) {
+      const n = missed.reduce((a, x) => a + x.transcriptCount, 0);
+      console.log(`  ⚠ ${n} transcript(s) are NOT being read. Include them with \`sessionlint --all-roots\`,`);
+      console.log(`    or point at one explicitly with \`--add-root <path>\`.`);
+    }
+  }
 
   try {
     const discovered = await discoverSessions(root);
@@ -633,9 +669,10 @@ async function runExportCommand(args: string[]): Promise<void> {
 
 async function runSessionsCommand(args: string[]): Promise<void> {
   const dirIndex = args.indexOf("--dir");
-  const root = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : defaultRoot();
+  const baseRoot = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : defaultRoot();
+  const roots = resolveRoots(args, baseRoot);
 
-  const discovered = (await discoverSessions(root)).filter((d) => d.kind === "top-level");
+  const discovered = (await discoverSessionsAcross(roots)).filter((d) => d.kind === "top-level");
   if (discovered.length === 0) {
     console.log("No session files found. Run Claude Code at least once to generate logs.");
     return;
@@ -663,7 +700,8 @@ async function runSessionsCommand(args: string[]): Promise<void> {
   }
   rows.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  console.log(`sessionlint · ${rows.length} session(s) in ${root}\n`);
+  const rootLabel = roots.length === 1 ? roots[0]! : `${roots.length} config roots`;
+  console.log(`sessionlint · ${rows.length} session(s) in ${rootLabel}\n`);
   console.log(`  ${"session".padEnd(9)} ${"last active".padEnd(12)} ${"turns".padStart(5)}  ${"est. cost".padStart(9)}  title`);
   for (const r of rows) {
     const date = r.date.getTime() === 0 ? "—" : r.date.toISOString().slice(0, 10);
@@ -676,7 +714,7 @@ async function runSessionsCommand(args: string[]): Promise<void> {
 const KNOWN_SUBCOMMANDS = new Set([
   "statusline", "hook", "auto-delegate", "budget", "run", "loop", "report", "watch",
   "install-hook", "uninstall-hook", "hook-gate", "explain", "doctor", "sessions",
-  "export", "help", "version",
+  "export", "help", "version", "send2preyash", "contribute",
 ]);
 
 async function main(): Promise<void> {
@@ -710,6 +748,12 @@ async function main(): Promise<void> {
 
   if (args[0] === "export") {
     await runExportCommand(args.slice(1));
+    return;
+  }
+
+  if (args[0] === "send2preyash" || args[0] === "contribute") {
+    const code = await runContribute({ args: args.slice(1), version: VERSION, paranoid });
+    if (code !== 0) process.exit(code);
     return;
   }
 
@@ -782,7 +826,8 @@ async function main(): Promise<void> {
   }
 
   const dirIndex = args.indexOf("--dir");
-  const root = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : defaultRoot();
+  const baseRoot = dirIndex !== -1 && args[dirIndex + 1] ? args[dirIndex + 1]! : defaultRoot();
+  const roots = resolveRoots(args, baseRoot);
 
   const suppressIndex = args.indexOf("--suppress");
   const suppressedRuleIds =
@@ -793,7 +838,7 @@ async function main(): Promise<void> {
           .filter(Boolean)
       : [];
 
-  const discovered = (await discoverSessions(root)).filter((d) => d.kind === "top-level");
+  const discovered = (await discoverSessionsAcross(roots)).filter((d) => d.kind === "top-level");
   if (discovered.length === 0) {
     console.log("No session files found. Run Claude Code at least once to generate logs.");
     return;
@@ -805,6 +850,21 @@ async function main(): Promise<void> {
   }
 
   const report = buildReport(loaded, { suppressedRuleIds });
+
+  // A total that silently omits an entire config root is worse than no total. Warn on
+  // stderr so --json/--md/--ci consumers get clean stdout but a human still sees it.
+  // Only when the root was auto-detected. If the user typed --dir they have already
+  // chosen a root, and warning them about unrelated config dirs is noise.
+  if (dirIndex === -1 && !args.includes("--json") && !args.includes("--ci")) {
+    const missed = unscannedRoots(discoverConfigRoots(roots));
+    if (missed.length > 0) {
+      const n = missed.reduce((a, r) => a + r.transcriptCount, 0);
+      process.stderr.write(
+        `\n⚠ ${n} transcript(s) in ${missed.length} other Claude config dir(s) were NOT included: ` +
+          `${missed.map((r) => r.label).join(", ")}\n  Include them with:  sessionlint --all-roots\n\n`
+      );
+    }
+  }
 
   if (args.includes("--ci")) {
     runCiGate(report, args);

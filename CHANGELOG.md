@@ -7,6 +7,62 @@ independently of the package.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-19
+
+**If you use Claude Code with more than one account, every previous version silently
+reported on one of them.** And from 2026-09-01, every previous version would have
+priced Sonnet 5 50% too high. Both are fixed here.
+
+### Fixed
+
+- **Sonnet 5 would have been priced at a rate that will never exist.** 0.5.0 shipped
+  `effectiveUntil: "2026-08-31"` with a `postIntroRate` of $3/$15, so on 2026-09-01 it
+  would have automatically switched every Sonnet 5 session to a 50%-higher rate.
+  Anthropic cancelled that increase — $2/$10 is now the standard price. The step-up is
+  removed and the whole table re-verified against the published pricing page on
+  2026-08-19. See D-009.
+- **Sessions in other Claude config dirs were silently ignored.** sessionlint read one
+  projects root and said nothing about the rest; on a two-account machine that meant
+  reporting on 7 of 33 sessions with no warning. `doctor` now lists every config root
+  it found and marks which are scanned, the main report warns when transcripts are
+  being left out, and `--all-roots` / `--add-root <path>` include them. A confident
+  total that omits two thirds of the data is the worst failure this tool can have.
+
+### Added
+
+- **`sessionlint send2preyash`** (alias `contribute`) — prepares a redacted
+  contribution bundle for the validation corpus and opens a prefilled draft in your own
+  mail client. **Nothing is transmitted:** there is no upload path in the codebase; you
+  attach the file and press send. Two confirmations, a full preview including a real
+  redacted line from your own data, and a self-check that refuses to write the bundle if
+  any residual secret, email, path, URL, or identifier pattern survives. `--paranoid`
+  refuses the command outright.
+- **Pricing coverage for metered-era billing.** Fast mode (Opus 5 / Opus 4.8, $10/$50,
+  a replacement rate rather than a multiplier) and the `inference_geo: "us"` 1.1x data
+  residency premium are now priced per API response, read from each response's own
+  usage bag. Opus 4.5, Sonnet 4.5 added to the table.
+- **`scripts/experiment/`** is now published — a statusline capture script and a
+  reconciler that compares a transcript-derived ledger against Claude Code's own
+  `cost.total_cost_usd`. The exactness claim in this project has only ever been
+  verified on headless `claude -p` runs; this is how the interactive path gets measured.
+  The capture script logs an explicit allowlist of accounting fields and no prompt text,
+  paths, or tool arguments.
+- **[CONTRIBUTING-CORPUS.md](./CONTRIBUTING-CORPUS.md)** — contributor onboarding, with
+  a plain-English privacy section.
+- Compiled binaries for darwin-arm64/x64, linux-x64/arm64, and windows-x64 via
+  `bun build --compile`, for people who don't want to install Bun.
+
+### Changed
+
+- README now leads with the exact install command and states plainly that `npx` will not
+  work — sessionlint needs Bun. The privacy section describes the new opt-in sharing
+  flow instead of claiming a blanket "nothing ever leaves your machine".
+- The bundle redactor goes beyond `export --redact`: session UUIDs (under any key
+  spelling), git branch names, MCP server names, and project directory names are all
+  pseudonymized. Every one of those was found by reading a real produced bundle by hand
+  — the automated self-check passed all of them first.
+
+
 ## [0.5.0] - 2026-07-20
 
 **Every cost figure reported by earlier versions was overstated — typically by

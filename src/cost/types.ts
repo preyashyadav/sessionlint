@@ -10,6 +10,10 @@ export interface TurnCostBreakdown {
   totalCost: number;
   /** true when cache_creation lacked the 5m/1h split and cost fell back to all-5m-rate. */
   cacheBreakdownAssumed: boolean;
+  /** true when any response in this turn billed at the model's fast-mode rate (2x base). */
+  fastMode: boolean;
+  /** true when any response in this turn billed the 1.1x US data-residency premium. */
+  inferenceGeoUs: boolean;
 }
 
 export interface SessionCostSummary {
@@ -18,4 +22,8 @@ export interface SessionCostSummary {
   perTurn: TurnCostBreakdown[];
   turnsWithUnknownPricing: number;
   pricingStale: boolean;
+  /** Turns billed at fast-mode rates — surfaced so a doubled bill is never unexplained. */
+  fastModeTurns: number;
+  /** Turns billed with the US data-residency premium. */
+  inferenceGeoUsTurns: number;
 }

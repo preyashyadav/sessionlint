@@ -10,7 +10,9 @@ dist/
 # Kept on this machine and in the pre-clean-backup tag; never pushed to GitHub.
 /MASTER.md
 /CLAUDE.md
-/scripts/
+/scripts/*
+# ...except the corpus experiment, which contributors need to run (Part C).
+!/scripts/experiment/
 
 # Real-history-derived fixtures stay local. Only fixtures/synthetic/ is published —
 # the public test suite runs entirely on hand-authored synthetic transcripts.
@@ -24,3 +26,6 @@ dist/
 !/docs/rules/
 !/docs/SUPPORTED_SCHEMAS.md
 !/docs/json-schema.md
+
+# Compiled release binaries (built by scripts, attached to GitHub releases)
+/dist/

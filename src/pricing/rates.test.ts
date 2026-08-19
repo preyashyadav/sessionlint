@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { checkStaleness, getModelRate, STALENESS_WARNING_DAYS } from "./rates";
-import type { PricingTable } from "./table";
+import { PRICING_TABLE, type PricingTable } from "./table";
 
 describe("getModelRate", () => {
   test("returns derived cache rates for a known model", () => {
@@ -16,33 +16,39 @@ describe("getModelRate", () => {
     expect(getModelRate("claude-hypothetical-future-model")).toBeNull();
   });
 
-  test("intro rate not yet expired before its effectiveUntil date", () => {
-    const rate = getModelRate("claude-sonnet-5", new Date("2026-08-01"));
-    expect(rate?.introRateExpired).toBe(false);
-  });
-
-  test("intro rate flagged expired after its effectiveUntil date", () => {
-    const rate = getModelRate("claude-sonnet-5", new Date("2026-09-01"));
-    expect(rate?.introRateExpired).toBe(true);
-  });
-
   test("a model with no effectiveUntil is never flagged expired", () => {
     const rate = getModelRate("claude-opus-4-8", new Date("2099-01-01"));
     expect(rate?.introRateExpired).toBe(false);
   });
 
-  // Regression: introRateExpired used to be computed and never acted on, so an expired
-  // intro rate kept billing forever — Sonnet 5 would have under-reported by 33% from
-  // 2026-09-01 onward, with no warning anywhere.
+  // The intro-rate mechanism is exercised against an INJECTED table, not against whichever
+  // real model happens to carry an intro rate this month. These tests used to bind to
+  // Sonnet 5's scheduled 2026-09-01 increase; when that increase was cancelled they failed
+  // for a reason that had nothing to do with the behavior they were meant to protect.
+  // No model in the shipped table carries an intro rate today — the machinery stays covered
+  // here so it still works for the next one that does.
+  const introTable: PricingTable = {
+    retrievedAt: "2026-01-01",
+    sourceUrl: "https://example.com",
+    models: {
+      "claude-intro": {
+        inputPerMTok: 2,
+        outputPerMTok: 10,
+        effectiveUntil: "2026-08-31",
+        postIntroRate: { inputPerMTok: 3, outputPerMTok: 15 },
+      },
+    },
+  };
+
   test("intro rate still applies inside the window", () => {
-    const r = getModelRate("claude-sonnet-5", new Date("2026-08-01"));
+    const r = getModelRate("claude-intro", new Date("2026-08-01"), introTable);
     expect(r?.inputPerMTok).toBe(2.0);
     expect(r?.outputPerMTok).toBe(10.0);
     expect(r?.introRateExpired).toBe(false);
   });
 
   test("standard rate takes over automatically once the intro window closes", () => {
-    const r = getModelRate("claude-sonnet-5", new Date("2026-09-01"));
+    const r = getModelRate("claude-intro", new Date("2026-09-01"), introTable);
     expect(r?.inputPerMTok).toBe(3.0);
     expect(r?.outputPerMTok).toBe(15.0);
     expect(r?.introRateExpired).toBe(true);
@@ -50,10 +56,22 @@ describe("getModelRate", () => {
   });
 
   test("derived cache rates follow the post-intro input rate, not the stale intro one", () => {
-    const r = getModelRate("claude-sonnet-5", new Date("2026-09-01"));
+    const r = getModelRate("claude-intro", new Date("2026-09-01"), introTable);
     expect(r?.cacheWrite5mPerMTok).toBeCloseTo(3.75, 5); // 3.0 * 1.25
     expect(r?.cacheWrite1hPerMTok).toBeCloseTo(6.0, 5); // 3.0 * 2
     expect(r?.cacheReadPerMTok).toBeCloseTo(0.3, 5); // 3.0 * 0.1
+  });
+
+  // Regression, D-009 (paired with the table-level test): the real Sonnet 5 must NOT
+  // reprice itself on 2026-09-01. This is the failure the cancelled increase would have
+  // caused — a silent 50% overstatement on the most-used model, with no warning.
+  test("real sonnet-5 bills $2/$10 on both sides of the cancelled 2026-09-01 boundary", () => {
+    for (const when of ["2026-08-01", "2026-09-01", "2027-01-01"]) {
+      const r = getModelRate("claude-sonnet-5", new Date(when));
+      expect(r?.inputPerMTok, when).toBe(2.0);
+      expect(r?.outputPerMTok, when).toBe(10.0);
+      expect(r?.introRateExpired, when).toBe(false);
+    }
   });
 
   test("an expired intro rate with NO published replacement keeps the old rate and flags it", () => {
@@ -65,6 +83,70 @@ describe("getModelRate", () => {
     const r = getModelRate("claude-hypothetical", new Date("2026-03-01"), table);
     expect(r?.inputPerMTok).toBe(1); // never invent a replacement rate
     expect(r?.introRateExpiredWithoutReplacement).toBe(true);
+  });
+});
+
+describe("getModelRate: fast mode", () => {
+  const AS_OF = new Date("2026-08-14");
+
+  test("TP — speed:'fast' on a model with published fast pricing bills the fast rate", () => {
+    const r = getModelRate("claude-opus-5", AS_OF, PRICING_TABLE, { speed: "fast" });
+    expect(r?.inputPerMTok).toBe(10.0);
+    expect(r?.outputPerMTok).toBe(50.0);
+    expect(r?.fastModeApplied).toBe(true);
+    // Cache multipliers stack on top of fast-mode pricing, not on the base rate.
+    expect(r?.cacheWrite5mPerMTok).toBeCloseTo(12.5, 5); // 10.0 * 1.25
+    expect(r?.cacheWrite1hPerMTok).toBeCloseTo(20.0, 5); // 10.0 * 2
+    expect(r?.cacheReadPerMTok).toBeCloseTo(1.0, 5); // 10.0 * 0.1
+  });
+
+  test("TN — speed:'standard' bills the base rate", () => {
+    const r = getModelRate("claude-opus-5", AS_OF, PRICING_TABLE, { speed: "standard" });
+    expect(r?.inputPerMTok).toBe(5.0);
+    expect(r?.fastModeApplied).toBe(false);
+  });
+
+  test("TN — no modifiers at all bills the base rate", () => {
+    const r = getModelRate("claude-opus-5", AS_OF);
+    expect(r?.inputPerMTok).toBe(5.0);
+    expect(r?.fastModeApplied).toBe(false);
+  });
+
+  // Opus 4.6 accepts `speed: "fast"` but bills at standard rates. Charging a premium
+  // there would be inventing a price the vendor does not publish (D-004).
+  test("TN — speed:'fast' on a model without published fast pricing bills the base rate", () => {
+    const r = getModelRate("claude-opus-4-6", AS_OF, PRICING_TABLE, { speed: "fast" });
+    expect(r?.inputPerMTok).toBe(5.0);
+    expect(r?.fastModeApplied).toBe(false);
+  });
+});
+
+describe("getModelRate: inference geography", () => {
+  const AS_OF = new Date("2026-08-14");
+
+  test("TP — inference_geo:'us' applies the 1.1x premium to every category", () => {
+    const r = getModelRate("claude-opus-5", AS_OF, PRICING_TABLE, { inferenceGeo: "us" });
+    expect(r?.inputPerMTok).toBeCloseTo(5.5, 5); // 5.0 * 1.1
+    expect(r?.outputPerMTok).toBeCloseTo(27.5, 5); // 25.0 * 1.1
+    expect(r?.cacheWrite5mPerMTok).toBeCloseTo(6.875, 5); // 5.5 * 1.25
+    expect(r?.cacheReadPerMTok).toBeCloseTo(0.55, 5); // 5.5 * 0.1
+    expect(r?.inferenceGeoUsApplied).toBe(true);
+  });
+
+  test("TN — 'global' and 'not_available' bill at standard rates", () => {
+    for (const geo of ["global", "not_available"]) {
+      const r = getModelRate("claude-opus-5", AS_OF, PRICING_TABLE, { inferenceGeo: geo });
+      expect(r?.inputPerMTok, geo).toBe(5.0);
+      expect(r?.inferenceGeoUsApplied, geo).toBe(false);
+    }
+  });
+
+  test("the residency premium stacks on top of fast-mode pricing", () => {
+    const r = getModelRate("claude-opus-5", AS_OF, PRICING_TABLE, { speed: "fast", inferenceGeo: "us" });
+    expect(r?.inputPerMTok).toBeCloseTo(11.0, 5); // 10.0 fast * 1.1
+    expect(r?.outputPerMTok).toBeCloseTo(55.0, 5); // 50.0 fast * 1.1
+    expect(r?.fastModeApplied).toBe(true);
+    expect(r?.inferenceGeoUsApplied).toBe(true);
   });
 });
 

@@ -157,3 +157,155 @@ export async function discoverSessions(root: string = defaultRoot()): Promise<Di
 
   return results;
 }
+
+/**
+ * A Claude Code config directory found on this machine, and whether this run reads it.
+ *
+ * sessionlint historically read exactly one projects root — whatever CLAUDE_CONFIG_DIR
+ * pointed at, or ~/.claude — and said nothing about the rest. On a machine running two
+ * accounts that meant reporting on 7 of 22 sessions with no warning at all, which is
+ * the worst failure mode this tool can have: a confident total that is quietly missing
+ * two thirds of the data. Detection is deliberately conservative (a sibling root is
+ * REPORTED, never silently merged) because sessions from different accounts should not
+ * be pooled into one cost figure without the user asking for it.
+ */
+export interface ConfigRoot {
+  /** The config dir itself, e.g. /Users/x/.claude-account-b */
+  configDir: string;
+  /** Its projects/ subdirectory — what discoverSessions() takes. */
+  projectsRoot: string;
+  /** Short display label, e.g. ".claude-account-b" */
+  label: string;
+  /** Top-level transcripts directly under projects/<proj>/. */
+  transcriptCount: number;
+  newestMtime: number | null;
+  /** True when this run actually reads it. */
+  scanned: boolean;
+}
+
+/** Top-level transcript count under a projects root (shallow, sync — a probe, not a scan). */
+function countTranscripts(root: string): number {
+  let n = 0;
+  let projDirs: string[];
+  try {
+    projDirs = readdirSync(root);
+  } catch {
+    return 0;
+  }
+  for (const proj of projDirs) {
+    try {
+      for (const entry of readdirSync(join(root, proj))) if (entry.endsWith(".jsonl")) n++;
+    } catch {
+      /* not a directory, or unreadable — skip */
+    }
+  }
+  return n;
+}
+
+/**
+ * Every plausible Claude Code config root on this machine: `~/.claude` plus any
+ * `~/.claude-*` sibling, plus whatever CLAUDE_CONFIG_DIR resolved to (which may be
+ * neither). Only roots that actually hold at least one transcript are returned —
+ * an empty `~/.claude` left behind by an uninstall is noise, not a finding.
+ *
+ * `scannedRoots` marks which projects roots this run is actually reading, so callers
+ * can render "scanned" vs "found but NOT scanned" without re-deriving it.
+ */
+export function discoverConfigRoots(scannedRoots: string[] = [defaultRoot()]): ConfigRoot[] {
+  const home = homedir();
+  const candidates = new Map<string, string>(); // projectsRoot -> configDir
+
+  let homeEntries: string[] = [];
+  try {
+    homeEntries = readdirSync(home);
+  } catch {
+    /* unreadable home — fall through to the explicit roots below */
+  }
+  for (const entry of homeEntries) {
+    if (entry !== ".claude" && !entry.startsWith(".claude-")) continue;
+    const configDir = join(home, entry);
+    candidates.set(join(configDir, "projects"), configDir);
+  }
+
+  // Whatever is actually being read must appear even if it lives outside the home dir
+  // (an absolute CLAUDE_CONFIG_DIR, or the literal-"~" misplacement case).
+  for (const r of scannedRoots) candidates.set(r, r.replace(/\/projects$/, ""));
+
+  const scanned = new Set(scannedRoots);
+  const roots: ConfigRoot[] = [];
+  for (const [projectsRoot, configDir] of candidates) {
+    const transcriptCount = countTranscripts(projectsRoot);
+    if (transcriptCount === 0 && !scanned.has(projectsRoot)) continue;
+    roots.push({
+      configDir,
+      projectsRoot,
+      label: configDir.startsWith(home + "/") ? configDir.slice(home.length + 1) : configDir,
+      transcriptCount,
+      newestMtime: newestTranscriptMtime(projectsRoot),
+      scanned: scanned.has(projectsRoot),
+    });
+  }
+  // Scanned first, then by transcript count — the unscanned rows are the warning.
+  return roots.sort((a, b) => Number(b.scanned) - Number(a.scanned) || b.transcriptCount - a.transcriptCount);
+}
+
+/** Roots holding transcripts that this run is NOT reading. Empty is the normal case. */
+export function unscannedRoots(roots: ConfigRoot[]): ConfigRoot[] {
+  return roots.filter((r) => !r.scanned && r.transcriptCount > 0);
+}
+
+/** discoverSessions across several roots, de-duplicated by absolute file path. */
+export async function discoverSessionsAcross(roots: string[]): Promise<DiscoveredSession[]> {
+  const seen = new Set<string>();
+  const all: DiscoveredSession[] = [];
+  let firstError: unknown = null;
+  let anyReadable = false;
+
+  for (const root of roots) {
+    let found: DiscoveredSession[];
+    try {
+      found = await discoverSessions(root);
+      anyReadable = true;
+    } catch (err) {
+      // One bad EXTRA root must not lose the others — but a run where nothing at all
+      // was readable is a real error (a typo'd --dir, most often) and has to surface,
+      // not quietly report zero sessions.
+      firstError ??= err;
+      continue;
+    }
+    for (const d of found) {
+      if (seen.has(d.filePath)) continue;
+      seen.add(d.filePath);
+      all.push(d);
+    }
+  }
+
+  if (!anyReadable && firstError !== null) throw firstError;
+  return all;
+}
+
+/**
+ * Resolves the roots a command should read from CLI flags.
+ *   (none)            → just the default root
+ *   --all-roots       → every detected root holding transcripts
+ *   --add-root <path> → the default root plus this one (repeatable; accepts either a
+ *                       config dir or a projects dir, since both are things a user
+ *                       plausibly types)
+ */
+export function resolveRoots(args: string[], base: string = defaultRoot()): string[] {
+  const roots = [base];
+  if (args.includes("--all-roots")) {
+    for (const r of discoverConfigRoots([base])) {
+      if (r.transcriptCount > 0 && !roots.includes(r.projectsRoot)) roots.push(r.projectsRoot);
+    }
+  }
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "--add-root") continue;
+    const raw = args[i + 1];
+    if (!raw) continue;
+    const asProjects = raw.endsWith("/projects") || raw.endsWith("/projects/") ? raw.replace(/\/$/, "") : join(raw, "projects");
+    const chosen = countTranscripts(asProjects) > 0 ? asProjects : raw;
+    if (!roots.includes(chosen)) roots.push(chosen);
+  }
+  return roots;
+}

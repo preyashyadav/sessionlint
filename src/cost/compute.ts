@@ -22,28 +22,54 @@ function numberField(bag: Record<string, unknown>, key: string): number {
   return typeof v === "number" ? v : 0;
 }
 
-/** Splits summed cache_creation_input_tokens into 5m/1h buckets from each usage bag's
- * nested `cache_creation` object. Falls back to treating the whole amount as 5m-rate
- * (a conservative middle assumption, not a silent guess) when a bag has cache-creation
+function stringField(bag: Record<string, unknown>, key: string): string | null {
+  const v = bag[key];
+  return typeof v === "string" ? v : null;
+}
+
+/** Splits one bag's cache_creation_input_tokens into 5m/1h buckets from its nested
+ * `cache_creation` object. Falls back to treating the whole amount as 5m-rate (a
+ * conservative middle assumption, not a silent guess) when a bag has cache-creation
  * tokens but no nested breakdown — an older/degraded schema. */
-function extractCacheBreakdown(rawBags: Record<string, unknown>[]): CacheCreationBreakdown {
-  let ephemeral5m = 0;
-  let ephemeral1h = 0;
-  let breakdownAvailable = true;
-
-  for (const bag of rawBags) {
-    const totalCacheCreation = numberField(bag, "cache_creation_input_tokens");
-    const nested = bag["cache_creation"];
-    if (nested && typeof nested === "object") {
-      ephemeral5m += numberField(nested as Record<string, unknown>, "ephemeral_5m_input_tokens");
-      ephemeral1h += numberField(nested as Record<string, unknown>, "ephemeral_1h_input_tokens");
-    } else if (totalCacheCreation > 0) {
-      ephemeral5m += totalCacheCreation;
-      breakdownAvailable = false;
-    }
+function splitCacheCreation(bag: Record<string, unknown>): CacheCreationBreakdown {
+  const nested = bag["cache_creation"];
+  if (nested && typeof nested === "object") {
+    return {
+      ephemeral5m: numberField(nested as Record<string, unknown>, "ephemeral_5m_input_tokens"),
+      ephemeral1h: numberField(nested as Record<string, unknown>, "ephemeral_1h_input_tokens"),
+      breakdownAvailable: true,
+    };
   }
+  const totalCacheCreation = numberField(bag, "cache_creation_input_tokens");
+  if (totalCacheCreation > 0) {
+    return { ephemeral5m: totalCacheCreation, ephemeral1h: 0, breakdownAvailable: false };
+  }
+  return { ephemeral5m: 0, ephemeral1h: 0, breakdownAvailable: true };
+}
 
-  return { ephemeral5m, ephemeral1h, breakdownAvailable };
+/**
+ * The per-response usage bags to price. `speed` and `inference_geo` are per-response
+ * billing modifiers, so cost has to be accumulated bag by bag rather than by pricing
+ * the turn's summed totals once. For a turn whose responses all share one rate the
+ * two are arithmetically identical (multiplication distributes over the sum), so this
+ * does not disturb the ground-truth match verified in Phase 6 T1.
+ *
+ * `UsageTotals.raw` is the source those totals were summed from and is non-empty for
+ * any real transcript. The synthesized-bag fallback covers hand-built usage objects
+ * (test fixtures, future adapters) that carry totals without raw bags — pricing those
+ * at base rates preserves the pre-existing behavior exactly.
+ */
+function priceableBags(usage: Turn["usage"]): Record<string, unknown>[] {
+  if (!usage) return [];
+  if (usage.raw.length > 0) return usage.raw;
+  return [
+    {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      cache_creation_input_tokens: usage.cacheCreationInputTokens,
+      cache_read_input_tokens: usage.cacheReadInputTokens,
+    },
+  ];
 }
 
 function zeroBreakdown(turnId: string, model: string | null): TurnCostBreakdown {
@@ -57,6 +83,8 @@ function zeroBreakdown(turnId: string, model: string | null): TurnCostBreakdown 
     outputCost: 0,
     totalCost: 0,
     cacheBreakdownAssumed: false,
+    fastMode: false,
+    inferenceGeoUs: false,
   };
 }
 
@@ -67,17 +95,35 @@ export function computeTurnCost(turn: Turn, asOf: Date = new Date()): TurnCostBr
   // A session from inside an intro-pricing window keeps its intro rate forever; only
   // turns that actually ran after the boundary get the standard rate. Falling back to
   // `asOf` covers transcripts with no usable timestamp.
-  const rate = getModelRate(turn.model, turn.startedAt ?? asOf);
-  if (!rate) return zeroBreakdown(turn.turnId, turn.model);
+  const when = turn.startedAt ?? asOf;
+  if (!getModelRate(turn.model, when)) return zeroBreakdown(turn.turnId, turn.model);
 
-  const usage = turn.usage;
-  const { ephemeral5m, ephemeral1h, breakdownAvailable } = extractCacheBreakdown(usage?.raw ?? []);
+  let inputCost = 0;
+  let cacheWriteCost = 0;
+  let cacheReadCost = 0;
+  let outputCost = 0;
+  let cacheBreakdownAssumed = false;
+  let fastMode = false;
+  let inferenceGeoUs = false;
 
-  const inputCost = ((usage?.inputTokens ?? 0) / 1_000_000) * rate.inputPerMTok;
-  const cacheWriteCost =
-    (ephemeral5m / 1_000_000) * rate.cacheWrite5mPerMTok + (ephemeral1h / 1_000_000) * rate.cacheWrite1hPerMTok;
-  const cacheReadCost = ((usage?.cacheReadInputTokens ?? 0) / 1_000_000) * rate.cacheReadPerMTok;
-  const outputCost = ((usage?.outputTokens ?? 0) / 1_000_000) * rate.outputPerMTok;
+  for (const bag of priceableBags(turn.usage)) {
+    const rate = getModelRate(turn.model, when, PRICING_TABLE, {
+      speed: stringField(bag, "speed"),
+      inferenceGeo: stringField(bag, "inference_geo"),
+    });
+    if (!rate) continue; // unreachable: the same model resolved above
+    if (rate.fastModeApplied) fastMode = true;
+    if (rate.inferenceGeoUsApplied) inferenceGeoUs = true;
+
+    const { ephemeral5m, ephemeral1h, breakdownAvailable } = splitCacheCreation(bag);
+    if (!breakdownAvailable) cacheBreakdownAssumed = true;
+
+    inputCost += (numberField(bag, "input_tokens") / 1_000_000) * rate.inputPerMTok;
+    cacheWriteCost +=
+      (ephemeral5m / 1_000_000) * rate.cacheWrite5mPerMTok + (ephemeral1h / 1_000_000) * rate.cacheWrite1hPerMTok;
+    cacheReadCost += (numberField(bag, "cache_read_input_tokens") / 1_000_000) * rate.cacheReadPerMTok;
+    outputCost += (numberField(bag, "output_tokens") / 1_000_000) * rate.outputPerMTok;
+  }
 
   return {
     turnId: turn.turnId,
@@ -88,7 +134,9 @@ export function computeTurnCost(turn: Turn, asOf: Date = new Date()): TurnCostBr
     cacheReadCost,
     outputCost,
     totalCost: inputCost + cacheWriteCost + cacheReadCost + outputCost,
-    cacheBreakdownAssumed: !breakdownAvailable,
+    cacheBreakdownAssumed,
+    fastMode,
+    inferenceGeoUs,
   };
 }
 
@@ -104,5 +152,7 @@ export function computeSessionCost(session: Session, asOf: Date = new Date()): S
     perTurn,
     turnsWithUnknownPricing,
     pricingStale: stale,
+    fastModeTurns: perTurn.filter((t) => t.fastMode).length,
+    inferenceGeoUsTurns: perTurn.filter((t) => t.inferenceGeoUs).length,
   };
 }

@@ -18,16 +18,23 @@ Three layers, all in one CLI:
 
 ## Install
 
-Requires [Bun](https://bun.com):
-
 ```bash
-curl -fsSL https://bun.com/install | bash   # if you don't have Bun
-bunx sessionlint                            # that's the whole setup
+curl -fsSL https://bun.com/install | bash && bunx sessionlint
 ```
+
+That is the whole setup. **sessionlint runs on [Bun](https://bun.com), not Node** — the
+first half of that line installs Bun if you don't have it. Plain `npx sessionlint` will
+not work; use `bunx`.
 
 No config, no account, no server. It reads Claude Code's transcripts from your own
 disk — `~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects` if you use a custom
-config dir (it even detects the case where Claude Code misplaced them).
+config dir. If you run more than one Claude account, it tells you so instead of
+silently reporting on one of them (`sessionlint doctor` lists every config root it
+found; `--all-roots` reads them all).
+
+**Want to help?** The rules are still heuristics until they're measured on more than
+one person's history. See **[CONTRIBUTING-CORPUS.md](./CONTRIBUTING-CORPUS.md)** — it
+takes about two minutes.
 
 ## What a report looks like
 
@@ -82,6 +89,8 @@ tells you what happened; it never overrules you.
 | `sessionlint explain [<rule>]` | What a rule detects, why it costs, how to fix it |
 | `sessionlint doctor` | Environment check: where sessions are read from, how many found, pricing freshness |
 | `sessionlint export --redact` | Write redacted copies of your sessions (prose/paths/secrets removed) so you can share history. `--out <dir>` |
+| `sessionlint send2preyash` | Prepare a redacted contribution bundle + a prefilled mail draft. Nothing is sent automatically. `--last N`, `--since <date>`, `--to <addr>` |
+| `sessionlint --all-roots` | Include every Claude config dir on this machine, not just the active one (`--add-root <path>` for a specific one) |
 | `sessionlint --verify` | Replay-audit findings with real, billed API calls — cost preview + confirmation first |
 | `sessionlint statusline` | Burn gauge for Claude Code's `statusLine.command` |
 | `sessionlint budget set <usd>` | Per-session $ budget for the statusline sentinel (`status` / `off`) |
@@ -106,8 +115,15 @@ Details per rule: `sessionlint explain <rule>` or [docs/rules/](./docs/rules/).
 
 ## Privacy & honesty
 
-- **Local-only.** Your transcripts never leave your machine. No server, no account,
-  no telemetry.
+- **Local-only by default.** No server, no account, no telemetry, and no background
+  network activity of any kind. sessionlint has no ability to transmit your history:
+  there is no upload path in the code.
+- **One opt-in sharing flow, driven entirely by you.** `sessionlint send2preyash`
+  exists so people can donate history to the validation study. It writes a redacted
+  file to your working directory and opens a draft in *your* mail client — you attach
+  the file and press send. It shows you a full preview, including a real redacted line
+  from your own data, and asks twice before writing anything. It cannot send on your
+  behalf, and `--paranoid` refuses it outright.
 - **Read-only by default.** Anything that spends money (`--verify`, `run`) shows a
   cost preview and requires explicit confirmation. `--paranoid` blocks
   SessionLint-owned API and webhook calls; it cannot sandbox commands you explicitly launch.
@@ -117,10 +133,17 @@ Details per rule: `sessionlint explain <rule>` or [docs/rules/](./docs/rules/).
 
 ## Status
 
-Young but real: dogfooded on the author's own history, with a published test
-suite. The first replay-verified equivalence audit was inconclusive (0/5 sampled
-turns matched on a cheaper model, far too small a sample for a general conclusion)
-and is published as-is because honest uncertainty is the point.
+Young but real: dogfooded on the author's own history, with a published test suite
+(567 tests). Two results are published as-is because honest uncertainty is the point:
+
+- The replay-verified equivalence audit returned **0 of 5** sampled turns judged
+  equivalent on a cheaper model (Wilson 95% CI 0–43%). There is currently **no
+  evidence** that routing work to a cheaper model preserves output quality, and the
+  tool does not claim otherwise.
+- The cost ledger reconciles **exactly** against `claude -p --output-format json`'s own
+  `total_cost_usd` — but only on headless runs. The interactive path has not been
+  reconciled yet; `scripts/experiment/` exists to measure it, and contributions are
+  what make that possible.
 
 ## Contributing your history to the validation study
 

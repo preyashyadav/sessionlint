@@ -20,6 +20,12 @@ function makeTurn(overrides: Partial<Turn> = {}): Turn {
 }
 
 describe("computeTurnCost: exact fixture match", () => {
+  // Every `raw` bag below carries its OWN token counts, because that is what a real
+  // transcript looks like: `buildUsage` derives the aggregate fields by summing exactly
+  // these keys across the deduped bags, so aggregate and per-bag views are always two
+  // readings of the same numbers. Fixtures that set aggregates without matching bags
+  // describe a shape Claude Code never writes — the same class of unrealistic fixture
+  // that let a 2.2x billing error survive 485 tests (§7 2026-07-20).
   test("hand-computed cost for a fully-specified opus-4-8 turn", () => {
     const turn = makeTurn({
       usage: {
@@ -29,6 +35,9 @@ describe("computeTurnCost: exact fixture match", () => {
         cacheReadInputTokens: 2_000_000,
         raw: [
           {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_read_input_tokens: 2_000_000,
             cache_creation_input_tokens: 150_000,
             cache_creation: { ephemeral_5m_input_tokens: 100_000, ephemeral_1h_input_tokens: 50_000 },
           },

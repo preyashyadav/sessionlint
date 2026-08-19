@@ -1,6 +1,6 @@
 {
   "name": "sessionlint",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A local-first linter, gauge, and guard that identifies Claude Code patterns that often drive API-equivalent cost.",
   "module": "index.ts",
   "type": "module",
@@ -26,7 +26,9 @@
     "index.ts",
     "src",
     "!src/**/*.test.ts",
+    "scripts/experiment",
     "docs/rules",
+    "CONTRIBUTING-CORPUS.md",
     "README.md",
     "LICENSE"
   ],
