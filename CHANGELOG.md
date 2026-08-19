@@ -7,6 +7,26 @@ independently of the package.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-19
+
+### Fixed
+
+- **Pricing table date now reflects when the rates were actually verified.** Every rate
+  was re-checked against Anthropic's published pricing page on 2026-08-19, but the table
+  still carried `retrievedAt: "2026-08-14"`, so `doctor` reported it as 5 days old when
+  it was current. Cosmetic — no rate was wrong — but this project does not get to be
+  loose about provenance dates.
+
+### Added
+
+- **Retired models priced** (Opus 4.1, Opus 4, Sonnet 4, Haiku 3.5). Transcripts outlive
+  model availability: a session recorded months ago was genuinely billed at those rates,
+  and reporting "unknown pricing" for it was a gap, not caution.
+- README now carries a step-by-step **"Trying it out (and sending me a report)"** walk-
+  through, so a first-time user can go from install to useful feedback without reading
+  the rest of the page. It asks for a plain-English report before it asks for any data.
+
+
 ## [0.6.0] - 2026-08-19
 
 **If you use Claude Code with more than one account, every previous version silently

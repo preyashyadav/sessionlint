@@ -32,9 +32,88 @@ config dir. If you run more than one Claude account, it tells you so instead of
 silently reporting on one of them (`sessionlint doctor` lists every config root it
 found; `--all-roots` reads them all).
 
-**Want to help?** The rules are still heuristics until they're measured on more than
-one person's history. See **[CONTRIBUTING-CORPUS.md](./CONTRIBUTING-CORPUS.md)** — it
-takes about two minutes.
+---
+
+## Trying it out (and sending me a report)
+
+Every number in this project currently comes from **one machine**. If you run Claude
+Code, ten minutes of your time makes the whole thing more honest. Steps 1–3 are just
+"look at your own data" — do those even if you never send anything.
+
+### 1. Install and check it found your sessions
+
+```bash
+curl -fsSL https://bun.com/install | bash    # skip if you already have Bun
+bunx sessionlint doctor
+```
+
+You should see a sessions root, a session count, and the pricing-table age. If you use
+more than one Claude account, doctor lists **every** config dir it found and marks which
+ones it reads:
+
+```
+  config roots found  3
+    ✓ scanned     .claude-account-b        7 transcript(s)
+    ✗ NOT scanned .claude                  15 transcript(s)
+    ✗ NOT scanned .claude-account-tago     11 transcript(s)
+```
+
+If it reports zero sessions, doctor prints where it looked — usually `CLAUDE_CONFIG_DIR`
+points somewhere unexpected.
+
+### 2. Read your own report
+
+```bash
+bunx sessionlint              # add --all-roots to include every config dir
+```
+
+Read-only; it writes nothing. Findings come with a dollar **range** and the assumptions
+spelled out. **Finding nothing is a real result too** — on my own history it currently
+flags about one thing per fourteen sessions, and whether that holds for anyone else is
+exactly the open question.
+
+Worth a look while you're here:
+
+```bash
+bunx sessionlint sessions     # every session with turns + API-equivalent cost
+bunx sessionlint explain cache-nuke
+```
+
+### 3. Tell me what you saw
+
+This is the part I actually need — **even one line helps**, and it needs no data at all:
+
+- Did `doctor` find your sessions, or did you have to fix something?
+- How many findings did `sessionlint` print, and did any of them look *wrong* to you?
+- Does the cost figure look plausible next to what you'd expect to have spent?
+
+A false positive you can describe in a sentence is worth more than a clean run.
+
+### 4. Optional: send a redacted bundle
+
+```bash
+bunx sessionlint send2preyash
+```
+
+Prepares **one redacted file** and opens a draft in your own mail client — **nothing is
+transmitted**; there is no upload path in this codebase. You see a full preview first,
+including a real redacted line from your own data, and you attach and send it yourself.
+
+Prose, file contents, paths, filenames, secrets, git branches, MCP server names, project
+directory names, and session IDs are all replaced. Model names, timestamps, token
+counts, and tool names are kept — that's what the rules need.
+
+Narrow it if you'd rather: `--last 5`, `--since 2026-08-01`, `--session <id>`.
+
+Full detail, including how to withdraw: **[CONTRIBUTING-CORPUS.md](./CONTRIBUTING-CORPUS.md)**.
+
+### 5. Highest value, if you're up for a week of it
+
+Claude Code hands its **own** cost accounting to the statusline on every render. Nothing
+has ever checked that against a transcript-derived ledger on the interactive path — see
+[scripts/experiment/](./scripts/experiment/). One config line, then work normally.
+
+---
 
 ## What a report looks like
 

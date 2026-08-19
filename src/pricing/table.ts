@@ -39,7 +39,7 @@ export interface PricingTable {
 }
 
 export const PRICING_TABLE: PricingTable = {
-  retrievedAt: "2026-08-14",
+  retrievedAt: "2026-08-19",
   sourceUrl: "https://platform.claude.com/docs/en/about-claude/pricing",
   models: {
     // Fast mode is published for Opus 5 and Opus 4.8 only ($10/$50).
@@ -68,5 +68,13 @@ export const PRICING_TABLE: PricingTable = {
     "claude-fable-5": { inputPerMTok: 10.0, outputPerMTok: 50.0 },
     "claude-mythos-5": { inputPerMTok: 10.0, outputPerMTok: 50.0 },
     "claude-haiku-4-5": { inputPerMTok: 1.0, outputPerMTok: 5.0 },
+    // Retired models. Kept because transcripts outlive availability: a session
+    // recorded months ago still needs a real rate, and the alternative is
+    // "unknown pricing" on history that was genuinely billed. Rates are the
+    // published retired-model rates, not guesses.
+    "claude-opus-4-1": { inputPerMTok: 15.0, outputPerMTok: 75.0 },
+    "claude-opus-4": { inputPerMTok: 15.0, outputPerMTok: 75.0 },
+    "claude-sonnet-4": { inputPerMTok: 3.0, outputPerMTok: 15.0 },
+    "claude-haiku-3-5": { inputPerMTok: 0.8, outputPerMTok: 4.0 },
   },
 };

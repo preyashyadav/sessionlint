@@ -527,7 +527,7 @@ async function runHookGateCommand(args: string[]): Promise<void> {
   process.exit(2);
 }
 
-const VERSION = "0.6.0"; // keep in sync with package.json
+const VERSION = "0.6.1"; // keep in sync with package.json
 
 const HELP_TEXT = `sessionlint ${VERSION} — a linter, gauge, and guard for AI coding sessions
 ccusage shows the bill. sessionlint shows patterns behind it — and helps agent loops land.
